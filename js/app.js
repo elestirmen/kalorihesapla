@@ -106,6 +106,7 @@ function bindEvents() {
   });
 
   document.getElementById('btn-auto-fill')?.addEventListener('click', autoFillWeek);
+  document.getElementById('btn-clear-week')?.addEventListener('click', clearWeekMeals);
   document.getElementById('btn-print')?.addEventListener('click', () => window.print());
   document.getElementById('btn-export')?.addEventListener('click', exportCurrentWeek);
   document.getElementById('btn-export-excel')?.addEventListener('click', exportExcel);
@@ -1509,6 +1510,23 @@ function autoFillWeek() {
   showToast(`Hafta dolduruldu! Günlük ort: ${Math.round(calcWeekCalories() / 7)} kcal`, 'success');
 }
 
+function clearWeekMeals() {
+  const hasFood = currentWeek.days.some(day => day.lunch.some(Boolean) || day.dinner.some(Boolean));
+  if (!hasFood) {
+    showToast('Bu haftada temizlenecek yemek yok', 'info');
+    return;
+  }
+
+  if (!confirm('Bu haftadaki tüm eklenmiş yemekler kaldırılacak. Devam edilsin mi?')) return;
+
+  currentWeek.days.forEach(clearDayMeals);
+
+  autoSave();
+  renderWeek();
+  updateStats();
+  showToast('Haftadaki tüm yemekler temizlendi', 'info');
+}
+
 function autoFillDay(dayIndex) {
   const day = currentWeek.days[dayIndex];
   const hasFood = day.lunch.some(Boolean) || day.dinner.some(Boolean);
@@ -1589,6 +1607,13 @@ function buildMeal(context, targetCal) {
   else if (totalCal < targetCal * 0.6 && main) portions[1] = 1.5;
 
   return { ids, portions };
+}
+
+function clearDayMeals(day) {
+  day.lunch = Array(4).fill(null);
+  day.dinner = Array(4).fill(null);
+  day.lunchPortions = Array(4).fill(1);
+  day.dinnerPortions = Array(4).fill(1);
 }
 
 function persistCurrentWeek() {
