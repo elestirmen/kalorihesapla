@@ -13,6 +13,76 @@ let foodMgmtFilter = { query: '', category: 'all' };
 let saveTimeout = null;
 
 const PORTION_OPTIONS = [0.5, 1, 1.5, 2];
+const AUTO_FILL_SLOT_COUNT = 4;
+const AUTO_FILL_TEMPLATES = {
+  classic_legume: {
+    mainPools: ['legumeMains', 'vegetableMains'],
+    thirdPools: ['grainSides', 'pastaSides'],
+    fourthPools: ['pickleSides', 'dairySides', 'saladSides', 'fruitSides']
+  },
+  veggie_pasta: {
+    mainPools: ['vegetableMains'],
+    thirdPools: ['pastaSides', 'grainSides', 'borekSides'],
+    fourthPools: ['dairySides', 'saladSides', 'fruitSides', 'dessertSides', 'pickleSides']
+  },
+  meat_grain: {
+    mainPools: ['meatMains'],
+    thirdPools: ['grainSides', 'pastaSides', 'borekSides'],
+    fourthPools: ['saladSides', 'dairySides', 'fruitSides', 'pickleSides']
+  },
+  meat_potato: {
+    mainPools: ['meatMains'],
+    thirdPools: ['potatoSides', 'vegetableSides', 'saladSides', 'grainSides'],
+    fourthPools: ['saladSides', 'dairySides', 'drinkSides', 'fruitSides']
+  },
+  sandwich_plate: {
+    mainPools: ['breadMains'],
+    thirdPools: ['saladSides', 'vegetableSides', 'potatoSides'],
+    fourthPools: ['dairySides', 'drinkSides', 'saladSides'],
+    allowThreeSlots: true
+  },
+  single_plate: {
+    mainPools: ['singlePlateMains'],
+    thirdPools: ['saladSides', 'dairySides'],
+    fourthPools: ['fruitSides', 'dessertSides', 'drinkSides'],
+    allowThreeSlots: true
+  },
+  light_dinner: {
+    mainPools: ['vegetableMains', 'legumeMains'],
+    thirdPools: ['pastaSides', 'grainSides', 'borekSides'],
+    fourthPools: ['dairySides', 'pickleSides', 'saladSides', 'dessertSides', 'fruitSides']
+  }
+};
+const AUTO_FILL_DAY_PATTERNS = {
+  Pazartesi: {
+    lunch: ['classic_legume', 'veggie_pasta', 'meat_grain'],
+    dinner: ['veggie_pasta', 'light_dinner', 'meat_grain']
+  },
+  Salı: {
+    lunch: ['meat_potato', 'meat_grain', 'classic_legume'],
+    dinner: ['meat_grain', 'light_dinner', 'veggie_pasta']
+  },
+  Çarşamba: {
+    lunch: ['meat_grain', 'meat_potato', 'single_plate'],
+    dinner: ['meat_grain', 'light_dinner', 'meat_potato']
+  },
+  Perşembe: {
+    lunch: ['veggie_pasta', 'meat_potato', 'sandwich_plate'],
+    dinner: ['sandwich_plate', 'meat_grain', 'light_dinner']
+  },
+  Cuma: {
+    lunch: ['meat_grain', 'classic_legume', 'meat_potato'],
+    dinner: ['light_dinner', 'veggie_pasta', 'meat_grain']
+  },
+  Cumartesi: {
+    lunch: ['meat_potato', 'classic_legume', 'meat_grain'],
+    dinner: ['meat_potato', 'sandwich_plate', 'meat_grain']
+  },
+  default: {
+    lunch: ['classic_legume', 'meat_grain', 'veggie_pasta'],
+    dinner: ['light_dinner', 'meat_grain', 'veggie_pasta']
+  }
+};
 const DOM = {};
 
 document.addEventListener('DOMContentLoaded', () => {
@@ -1492,14 +1562,18 @@ function autoFillWeek() {
   const context = createAutoFillContext();
 
   currentWeek.days.forEach(day => {
-    const isWeekend = day.dayName === 'Cumartesi' || day.dayName === 'Pazar';
-    const target = isWeekend ? Math.round(mealGoal * 1.05) : mealGoal;
+    if (autoFillIsSunday(day)) {
+      clearDayMeals(day);
+      return;
+    }
 
-    const lunch = buildMeal(context, target);
+    const target = day.dayName === 'Cumartesi' ? Math.round(mealGoal * 1.05) : mealGoal;
+
+    const lunch = buildMeal(context, target, 'lunch', day);
     day.lunch = lunch.ids;
     day.lunchPortions = lunch.portions;
 
-    const dinner = buildMeal(context, target);
+    const dinner = buildMeal(context, target, 'dinner', day);
     day.dinner = dinner.ids;
     day.dinnerPortions = dinner.portions;
   });
@@ -1507,7 +1581,8 @@ function autoFillWeek() {
   autoSave();
   renderWeek();
   updateStats();
-  showToast(`Hafta dolduruldu! Günlük ort: ${Math.round(calcWeekCalories() / 7)} kcal`, 'success');
+  const filledDayCount = currentWeek.days.filter(autoFillHasAnyFood).length || 1;
+  showToast(`Hafta örnek menü paternine göre dolduruldu! Günlük ort: ${Math.round(calcWeekCalories() / filledDayCount)} kcal`, 'success');
 }
 
 function clearWeekMeals() {
@@ -1532,29 +1607,26 @@ function autoFillDay(dayIndex) {
   const hasFood = day.lunch.some(Boolean) || day.dinner.some(Boolean);
   if (hasFood && !confirm(`${day.dayName} menüsünün üzerine yazılsın mı?`)) return;
 
+  if (autoFillIsSunday(day)) {
+    clearDayMeals(day);
+    autoSave();
+    renderWeek();
+    updateStats();
+    showToast('Pazar, örnek menü düzenine göre boş bırakıldı', 'info');
+    return;
+  }
+
   const goal = Storage.getSettings().dailyCalorieGoal || 2000;
   const mealGoal = Math.round(goal / 2);
   const context = createAutoFillContext();
+  autoFillSeedContext(context, dayIndex);
 
-  currentWeek.days.forEach((currentDay, index) => {
-    if (index === dayIndex) return;
-
-    [...currentDay.lunch, ...currentDay.dinner].filter(Boolean).forEach(foodId => {
-      const food = getFoodById(foodId);
-      if (!food) return;
-
-      if (food.category === 'corba') context.used.corba.add(foodId);
-      else if (food.category === 'ana_et' || food.category === 'ana_sebze') context.used.anaYemek.add(foodId);
-      else if (food.category === 'pilav' || food.category === 'makarna' || food.category === 'borek') context.used.yan.add(foodId);
-      else context.used.hafif.add(foodId);
-    });
-  });
-
-  const lunch = buildMeal(context, mealGoal);
+  const target = day.dayName === 'Cumartesi' ? Math.round(mealGoal * 1.05) : mealGoal;
+  const lunch = buildMeal(context, target, 'lunch', day);
   day.lunch = lunch.ids;
   day.lunchPortions = lunch.portions;
 
-  const dinner = buildMeal(context, mealGoal);
+  const dinner = buildMeal(context, target, 'dinner', day);
   day.dinner = dinner.ids;
   day.dinnerPortions = dinner.portions;
 
@@ -1568,52 +1640,301 @@ function createAutoFillContext() {
   const allFoods = getAllFoods();
   return {
     pools: {
-      corba: allFoods.filter(food => food.category === 'corba'),
-      anaYemek: allFoods.filter(food => food.category === 'ana_et' || food.category === 'ana_sebze'),
-      yan: allFoods.filter(food => food.category === 'pilav' || food.category === 'makarna' || food.category === 'borek'),
-      hafif: allFoods.filter(food => food.category === 'salata' || food.category === 'icecek' || food.category === 'meyve' || food.category === 'diger')
+      soups: allFoods.filter(autoFillIsSoup),
+      meatMains: allFoods.filter(autoFillIsMeatMain),
+      vegetableMains: allFoods.filter(autoFillIsVegetableMain),
+      legumeMains: allFoods.filter(autoFillIsLegumeMain),
+      breadMains: allFoods.filter(autoFillIsBreadMain),
+      singlePlateMains: allFoods.filter(autoFillIsSinglePlateMain),
+      grainSides: allFoods.filter(autoFillIsGrainSide),
+      pastaSides: allFoods.filter(autoFillIsPastaSide),
+      borekSides: allFoods.filter(autoFillIsBorekSide),
+      potatoSides: allFoods.filter(autoFillIsPotatoSide),
+      vegetableSides: allFoods.filter(autoFillIsVegetableSide),
+      saladSides: allFoods.filter(autoFillIsSaladSide),
+      pickleSides: allFoods.filter(autoFillIsPickleSide),
+      dairySides: allFoods.filter(autoFillIsDairySide),
+      drinkSides: allFoods.filter(autoFillIsDrinkSide),
+      dessertSides: allFoods.filter(autoFillIsDessertSide),
+      fruitSides: allFoods.filter(autoFillIsFruitSide)
     },
     used: {
-      corba: new Set(),
-      anaYemek: new Set(),
-      yan: new Set(),
-      hafif: new Set()
+      exact: new Set()
     }
   };
 }
 
-function pickRandom(pool, usedSet) {
-  const available = pool.filter(food => !usedSet.has(food.id));
-  const source = available.length > 0 ? available : pool;
+function autoFillSeedContext(context, skipDayIndex) {
+  currentWeek.days.forEach((day, index) => {
+    if (index === skipDayIndex) return;
+    [...day.lunch, ...day.dinner].filter(Boolean).forEach(foodId => {
+      context.used.exact.add(foodId);
+    });
+  });
+}
+
+function autoFillHasAnyFood(day) {
+  return day.lunch.some(Boolean) || day.dinner.some(Boolean);
+}
+
+function autoFillIsSunday(day) {
+  return day?.dayName === 'Pazar';
+}
+
+function autoFillFoodText(food) {
+  return normalizeTurkish(String(food?.name || '').toLowerCase());
+}
+
+function autoFillFoodHasKeywords(food, keywords) {
+  const text = autoFillFoodText(food);
+  return keywords.some(keyword => text.includes(normalizeTurkish(String(keyword).toLowerCase())));
+}
+
+function autoFillIsSoup(food) {
+  return food.category === 'corba';
+}
+
+function autoFillIsSideLikeMain(food) {
+  return ['patates_puresi', 'elma_dilim_patates', 'piyaz', 'firinda_sebzeler', 'alman_usulu_patates'].includes(food.id);
+}
+
+function autoFillIsBreadMain(food) {
+  return (food.category === 'ana_et' || food.category === 'ana_sebze')
+    && autoFillFoodHasKeywords(food, ['ekmek arasi', 'döner', 'doner', 'tantuni']);
+}
+
+function autoFillIsSinglePlateMain(food) {
+  return autoFillFoodHasKeywords(food, ['mantı', 'manti']);
+}
+
+function autoFillIsLegumeMain(food) {
+  return food.category === 'ana_sebze'
+    && !autoFillIsSideLikeMain(food)
+    && autoFillFoodHasKeywords(food, ['fasulye', 'nohut', 'mercimek', 'barbunya']);
+}
+
+function autoFillIsVegetableMain(food) {
+  return food.category === 'ana_sebze'
+    && !autoFillIsSideLikeMain(food)
+    && !autoFillIsLegumeMain(food)
+    && !autoFillIsBreadMain(food);
+}
+
+function autoFillIsMeatMain(food) {
+  return food.category === 'ana_et'
+    && !autoFillIsBreadMain(food)
+    && !autoFillIsSinglePlateMain(food)
+    && !autoFillIsSideLikeMain(food);
+}
+
+function autoFillIsGrainSide(food) {
+  return food.category === 'pilav';
+}
+
+function autoFillIsPastaSide(food) {
+  return food.category === 'makarna';
+}
+
+function autoFillIsBorekSide(food) {
+  return food.category === 'borek';
+}
+
+function autoFillIsPotatoSide(food) {
+  return ['patates_puresi', 'elma_dilim_patates', 'alman_usulu_patates'].includes(food.id);
+}
+
+function autoFillIsVegetableSide(food) {
+  return ['firinda_sebzeler', 'piyaz'].includes(food.id);
+}
+
+function autoFillIsSaladSide(food) {
+  return food.category === 'salata' || ['piyaz', 'alman_usulu_patates'].includes(food.id);
+}
+
+function autoFillIsPickleSide(food) {
+  return food.id === 'tursu' || autoFillFoodHasKeywords(food, ['turşu', 'tursu']);
+}
+
+function autoFillIsDairySide(food) {
+  return food.id === 'ayran' || food.id === 'yogurt' || food.id === 'cacik';
+}
+
+function autoFillIsDrinkSide(food) {
+  return food.category === 'icecek' && !autoFillIsDairySide(food);
+}
+
+function autoFillIsDessertSide(food) {
+  return food.category === 'tatli';
+}
+
+function autoFillIsFruitSide(food) {
+  return food.category === 'meyve';
+}
+
+function autoFillIsFreshSide(food) {
+  return autoFillIsSaladSide(food)
+    || autoFillIsPickleSide(food)
+    || autoFillIsFruitSide(food)
+    || autoFillIsDairySide(food)
+    || autoFillIsDrinkSide(food);
+}
+
+function autoFillHasDairyFlavor(food) {
+  return autoFillIsDairySide(food) || autoFillFoodHasKeywords(food, ['yoğurt', 'yogurt', 'peynir', 'kremalı', 'kremali']);
+}
+
+function autoFillUniqueFoods(foods) {
+  return [...new Map(foods.map(food => [food.id, food])).values()];
+}
+
+function autoFillPoolHasCandidate(context, poolNames, unusedOnly = false) {
+  const foods = autoFillUniqueFoods(poolNames.flatMap(poolName => context.pools[poolName] || []));
+  if (!unusedOnly) return foods.length > 0;
+  return foods.some(food => !context.used.exact.has(food.id));
+}
+
+function autoFillPatternIds(dayName, mealType) {
+  const dayPattern = AUTO_FILL_DAY_PATTERNS[dayName] || AUTO_FILL_DAY_PATTERNS.default;
+  return [...new Set([...(dayPattern[mealType] || []), ...AUTO_FILL_DAY_PATTERNS.default[mealType]])];
+}
+
+function autoFillPickTemplate(context, dayName, mealType) {
+  const preferred = autoFillPatternIds(dayName, mealType);
+  const withUnused = preferred.filter(templateId => autoFillPoolHasCandidate(context, AUTO_FILL_TEMPLATES[templateId].mainPools, true));
+  const withAny = preferred.filter(templateId => autoFillPoolHasCandidate(context, AUTO_FILL_TEMPLATES[templateId].mainPools));
+  const source = withUnused.length > 0 ? withUnused : withAny;
+
+  if (source.length <= 1) return source[0] || preferred[0];
+  return Math.random() < 0.84 ? source[0] : source[1];
+}
+
+function autoFillScoreCandidate(food, targetRemaining, options = {}) {
+  const desired = Math.max(targetRemaining || food.calories, 40);
+  let score = Math.abs(desired - food.calories);
+
+  if (options.preferLowCal) score += food.calories * 0.25;
+  if (options.preferHighCal && food.calories < desired * 0.55) score += 80;
+  if (options.preferFresh) score += autoFillIsFreshSide(food) ? -55 : 25;
+  if (options.preferDairy) score += autoFillIsDairySide(food) ? -45 : 10;
+  if (options.avoidDairy && autoFillHasDairyFlavor(food)) score += 80;
+  if (options.avoidDessert && autoFillIsDessertSide(food)) score += 90;
+  if (desired < 140 && food.calories > 220) score += 90;
+
+  return score + (Math.random() * 18);
+}
+
+function autoFillPickFood(context, poolNames, blockedIds, targetRemaining, options = {}) {
+  let source = [];
+
+  poolNames.forEach(poolName => {
+    if (source.length > 0) return;
+    const candidates = autoFillUniqueFoods(context.pools[poolName] || [])
+      .filter(food => !blockedIds.has(food.id));
+    const unused = candidates.filter(food => !context.used.exact.has(food.id));
+    if (unused.length > 0) source = unused;
+  });
+
+  if (source.length === 0) {
+    for (const poolName of poolNames) {
+      const candidates = autoFillUniqueFoods(context.pools[poolName] || [])
+        .filter(food => !blockedIds.has(food.id));
+      if (candidates.length > 0) {
+        source = candidates;
+        break;
+      }
+    }
+  }
+
   if (source.length === 0) return null;
 
-  const picked = source[Math.floor(Math.random() * source.length)];
-  usedSet.add(picked.id);
+  const picked = source
+    .map(food => ({ food, score: autoFillScoreCandidate(food, targetRemaining, options) }))
+    .sort((a, b) => a.score - b.score)[0]?.food || null;
+
+  if (picked) context.used.exact.add(picked.id);
   return picked;
 }
 
-function buildMeal(context, targetCal) {
-  const soup = pickRandom(context.pools.corba, context.used.corba);
-  const main = pickRandom(context.pools.anaYemek, context.used.anaYemek);
-  const side = pickRandom(context.pools.yan, context.used.yan);
-  const light = pickRandom(context.pools.hafif, context.used.hafif);
+function autoFillMealCalories(items) {
+  return items.reduce((sum, item) => sum + (item?.calories || 0), 0);
+}
 
-  const items = [soup, main, side, light];
-  const ids = items.map(item => item?.id || null);
-  const portions = [1, 1, 1, 1];
+function buildMeal(context, targetCal, mealType, day) {
+  if (autoFillIsSunday(day)) {
+    return {
+      ids: Array(AUTO_FILL_SLOT_COUNT).fill(null),
+      portions: Array(AUTO_FILL_SLOT_COUNT).fill(1)
+    };
+  }
 
-  const totalCal = items.reduce((sum, item) => sum + (item?.calories || 0), 0);
-  if (totalCal > targetCal * 1.3 && main) portions[1] = 0.5;
-  else if (totalCal < targetCal * 0.6 && main) portions[1] = 1.5;
+  const templateId = autoFillPickTemplate(context, day.dayName, mealType);
+  const template = AUTO_FILL_TEMPLATES[templateId] || AUTO_FILL_TEMPLATES.classic_legume;
+  const mealItems = [];
+  const blockedIds = new Set();
+
+  const soup = autoFillPickFood(context, ['soups'], blockedIds, Math.min(targetCal * 0.22, 160), { preferLowCal: true });
+  if (soup) {
+    mealItems.push(soup);
+    blockedIds.add(soup.id);
+  }
+
+  const mainTarget = Math.max(targetCal - autoFillMealCalories(mealItems) - 180, 220);
+  const main = autoFillPickFood(context, template.mainPools, blockedIds, mainTarget, { preferHighCal: true });
+  if (main) {
+    mealItems.push(main);
+    blockedIds.add(main.id);
+  }
+
+  const thirdTarget = Math.max(targetCal - autoFillMealCalories(mealItems) - 110, 70);
+  const third = autoFillPickFood(context, template.thirdPools, blockedIds, thirdTarget, {
+    preferFresh: templateId === 'sandwich_plate',
+    preferLowCal: templateId === 'single_plate'
+  });
+  if (third) {
+    mealItems.push(third);
+    blockedIds.add(third.id);
+  }
+
+  const remainingForFourth = targetCal - autoFillMealCalories(mealItems);
+  const shouldSkipFourth = template.allowThreeSlots && mealItems.length >= 3 && remainingForFourth < 140;
+  const mealAlreadyHasDairy = mealItems.some(autoFillHasDairyFlavor);
+  const fourthPools = mealAlreadyHasDairy && templateId !== 'sandwich_plate'
+    ? [...template.fourthPools.filter(poolName => poolName !== 'dairySides'), 'dairySides']
+    : template.fourthPools;
+  const fourth = shouldSkipFourth
+    ? null
+    : autoFillPickFood(context, fourthPools, blockedIds, Math.max(remainingForFourth, 50), {
+        preferFresh: mealType === 'dinner' || templateId === 'sandwich_plate' || templateId === 'meat_potato',
+        preferDairy: templateId === 'sandwich_plate',
+        avoidDairy: mealAlreadyHasDairy && templateId !== 'sandwich_plate',
+        preferLowCal: remainingForFourth < 160,
+        avoidDessert: mealType === 'lunch' && remainingForFourth < 180
+      });
+  if (fourth) mealItems.push(fourth);
+
+  const ids = Array(AUTO_FILL_SLOT_COUNT).fill(null);
+  const portions = Array(AUTO_FILL_SLOT_COUNT).fill(1);
+  mealItems.slice(0, AUTO_FILL_SLOT_COUNT).forEach((item, index) => {
+    ids[index] = item.id;
+  });
+
+  const totalCal = autoFillMealCalories(mealItems);
+  if (main) {
+    if (totalCal > targetCal * 1.18 && main.calories >= 320 && !autoFillIsBreadMain(main) && !autoFillIsSinglePlateMain(main)) {
+      portions[1] = 0.5;
+    } else if (totalCal < targetCal * 0.72 && main.calories < 380 && !autoFillIsBreadMain(main)) {
+      portions[1] = 1.5;
+    }
+  }
 
   return { ids, portions };
 }
 
 function clearDayMeals(day) {
-  day.lunch = Array(4).fill(null);
-  day.dinner = Array(4).fill(null);
-  day.lunchPortions = Array(4).fill(1);
-  day.dinnerPortions = Array(4).fill(1);
+  day.lunch = Array(AUTO_FILL_SLOT_COUNT).fill(null);
+  day.dinner = Array(AUTO_FILL_SLOT_COUNT).fill(null);
+  day.lunchPortions = Array(AUTO_FILL_SLOT_COUNT).fill(1);
+  day.dinnerPortions = Array(AUTO_FILL_SLOT_COUNT).fill(1);
 }
 
 function persistCurrentWeek() {
