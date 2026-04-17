@@ -1,0 +1,197 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="description" content="Haftalık yemek menüsü planlama ve otomatik kalori hesaplama. 150+ Türk yemeği veritabanı.">
+  <title>Kalori Hesapla — Haftalık Yemek Planlama</title>
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🍽️</text></svg>">
+  <link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+
+  <!-- ══════════ HEADER ══════════ -->
+  <header class="app-header">
+    <div class="header-content">
+      <div class="header-left">
+        <div class="app-logo">
+          <span class="app-logo-icon">🍽️</span>
+          <h1>Kalori Hesapla</h1>
+        </div>
+        <nav class="tab-nav">
+          <button class="tab-btn active" data-tab="planner">📋 Menü Planlama</button>
+          <button class="tab-btn" data-tab="foods">🍽️ Yemek Yönetimi</button>
+        </nav>
+      </div>
+
+      <div class="header-right">
+        <div class="week-selector" id="planner-controls">
+          <button class="week-nav-btn" id="btn-prev-week" title="Önceki hafta">◀</button>
+          <span class="week-label" id="week-label">Bu Hafta</span>
+          <button class="week-nav-btn" id="btn-next-week" title="Sonraki hafta">▶</button>
+          <input type="date" class="week-date-input" id="week-date-input" title="Tarih seç">
+        </div>
+        <div class="header-controls">
+          <button class="btn btn-primary" id="btn-auto-fill" title="Haftalık menüyü otomatik doldur"><span>🎲</span> Otomatik Doldur</button>
+          <button class="btn btn-primary" id="btn-new-week"><span>➕</span> Yeni Hafta</button>
+          <div class="saved-weeks-wrapper" style="position:relative;">
+            <button class="btn" id="btn-saved-weeks"><span>📋</span> Kayıtlı</button>
+            <div class="weeks-dropdown" id="weeks-dropdown">
+              <div class="weeks-dropdown-header">📋 Kayıtlı Haftalar</div>
+              <div id="weeks-list"></div>
+            </div>
+          </div>
+          <button class="btn" id="btn-export-excel" title="Excel olarak indir">Excel</button>
+          <button class="btn" id="btn-export" title="JSON olarak dışa aktar">Dışa Aktar</button>
+          <button class="btn" id="btn-import" title="JSON dosyası içe aktar">İçe Aktar</button>
+          <button class="btn" id="btn-print" title="Yazdırma görünümü">Yazdır</button>
+        </div>
+      </div>
+    </div>
+  </header>
+
+  <!-- ════════════════════════════════════
+       TAB 1: MENÜ PLANLAMA
+       ════════════════════════════════════ -->
+  <main class="app-main" id="tab-planner">
+
+    <!-- Stats Bar -->
+    <section class="stats-bar">
+      <div class="stat-card">
+        <div class="stat-label">Haftalık Toplam</div>
+        <div><span class="stat-value" id="stat-weekly-cal">0</span> <span class="stat-unit">kcal</span></div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-label">Günlük Ortalama</div>
+        <div><span class="stat-value" id="stat-daily-cal">0</span> <span class="stat-unit">kcal</span></div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-label">Öğün Sayısı</div>
+        <div><span class="stat-value" id="stat-meal-count">0</span> <span class="stat-unit">öğün</span></div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-label">Toplam Yemek</div>
+        <div><span class="stat-value" id="stat-food-count">0</span> <span class="stat-unit">adet</span></div>
+      </div>
+      <div class="stat-card stat-card-goal">
+        <div class="stat-label">Günlük Hedef</div>
+        <div class="stat-goal-row">
+          <input type="number" class="goal-input" id="goal-input" value="2000" min="500" max="5000" step="100">
+          <span class="stat-unit">kcal</span>
+        </div>
+      </div>
+    </section>
+
+    <!-- Menu Grid -->
+    <section class="menu-grid" id="menu-grid"></section>
+
+  </main>
+
+  <!-- ════════════════════════════════════
+       TAB 2: YEMEK YÖNETİMİ
+       ════════════════════════════════════ -->
+  <main class="app-main hidden" id="tab-foods">
+
+    <div class="food-mgmt">
+      <!-- Header -->
+      <div class="food-mgmt-header">
+        <div>
+          <h2 class="food-mgmt-title">Yemek Veritabanı</h2>
+          <span class="food-mgmt-subtitle" id="food-total-count">0 yemek</span>
+        </div>
+        <button class="btn btn-primary" id="btn-add-food"><span>➕</span> Yeni Yemek Ekle</button>
+      </div>
+
+      <!-- Add Food Form (hidden) -->
+      <div class="food-add-form hidden" id="food-add-form">
+        <h3>Yeni Yemek Ekle</h3>
+        <div class="food-form-grid">
+          <div class="form-group">
+            <label for="new-food-name">Yemek Adı</label>
+            <input type="text" id="new-food-name" placeholder="Örn: Ev Yapımı Çorba" class="form-input">
+          </div>
+          <div class="form-group">
+            <label for="new-food-cal">Kalori (kcal)</label>
+            <input type="number" id="new-food-cal" placeholder="150" min="0" max="9999" class="form-input">
+          </div>
+          <div class="form-group">
+            <label for="new-food-cat">Kategori</label>
+            <select id="new-food-cat" class="form-input">
+              <option value="corba">🍲 Çorbalar</option>
+              <option value="ana_et">🍗 Et / Tavuk</option>
+              <option value="ana_sebze">🥘 Sebze Yemekleri</option>
+              <option value="pilav">🍚 Pilavlar</option>
+              <option value="makarna">🍝 Makarnalar</option>
+              <option value="borek">🥟 Börekler</option>
+              <option value="salata">🥗 Salatalar</option>
+              <option value="icecek">🥛 İçecekler</option>
+              <option value="tatli">🍮 Tatlılar</option>
+              <option value="meyve">🍎 Meyveler</option>
+              <option value="diger" selected>🍽️ Diğer</option>
+            </select>
+          </div>
+          <div class="form-group">
+            <label for="new-food-portion">Porsiyon</label>
+            <input type="text" id="new-food-portion" placeholder="1 porsiyon" class="form-input">
+          </div>
+        </div>
+        <div class="food-form-actions">
+          <button class="btn btn-primary" id="food-form-save">✓ Kaydet</button>
+          <button class="btn" id="food-form-cancel">İptal</button>
+        </div>
+      </div>
+
+      <!-- Filters -->
+      <div class="food-mgmt-filters">
+        <div class="food-search-wrap">
+          <span class="food-search-icon">🔍</span>
+          <input type="text" id="food-mgmt-search" placeholder="Yemek adı ile ara..." class="food-mgmt-search-input">
+        </div>
+        <div class="food-cat-filters">
+          <button class="food-cat-filter-btn active" data-category="all">Tümü</button>
+          <button class="food-cat-filter-btn" data-category="corba">🍲</button>
+          <button class="food-cat-filter-btn" data-category="ana_et">🍗</button>
+          <button class="food-cat-filter-btn" data-category="ana_sebze">🥘</button>
+          <button class="food-cat-filter-btn" data-category="pilav">🍚</button>
+          <button class="food-cat-filter-btn" data-category="makarna">🍝</button>
+          <button class="food-cat-filter-btn" data-category="borek">🥟</button>
+          <button class="food-cat-filter-btn" data-category="salata">🥗</button>
+          <button class="food-cat-filter-btn" data-category="icecek">🥛</button>
+          <button class="food-cat-filter-btn" data-category="tatli">🍮</button>
+          <button class="food-cat-filter-btn" data-category="meyve">🍎</button>
+          <button class="food-cat-filter-btn" data-category="diger">🍽️</button>
+        </div>
+      </div>
+
+      <!-- Food List -->
+      <div class="food-mgmt-list" id="food-mgmt-list"></div>
+    </div>
+
+  </main>
+
+  <!-- ══════════ SEARCH OVERLAY ══════════ -->
+  <div class="search-overlay" id="search-overlay">
+    <div class="search-modal" role="dialog" aria-label="Yemek arama">
+      <div class="search-header">
+        <div class="search-context" id="search-context"></div>
+        <div class="search-input-wrapper">
+          <span class="search-input-icon">🔍</span>
+          <input type="text" class="search-input" id="search-input"
+                 placeholder="Yemek adı yazın... (örn: mercimek, pilav, tavuk)"
+                 autocomplete="off" spellcheck="false">
+        </div>
+      </div>
+      <div class="search-results" id="search-results"></div>
+    </div>
+  </div>
+
+  <!-- ══════════ TOASTS ══════════ -->
+  <div class="toast-container" id="toast-container"></div>
+
+  <!-- ══════════ SCRIPTS ══════════ -->
+  <script src="js/data.js"></script>
+  <script src="js/storage.js"></script>
+  <script src="js/app.js"></script>
+
+</body>
+</html>
