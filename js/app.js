@@ -3,7 +3,6 @@
  * Haftalık yemek planlama, kalori hesaplama, yemek yönetimi
  */
 
-// ─── State ──────────────────────────────
 let currentWeekId = null;
 let currentWeek = null;
 let searchTarget = null;
@@ -11,14 +10,11 @@ let selectedSearchIndex = -1;
 let clipboard = null; // { lunch, dinner, lunchPortions, dinnerPortions }
 let activeTab = 'planner';
 let foodMgmtFilter = { query: '', category: 'all' };
-let editingFoodId = null;
+let saveTimeout = null;
 
 const PORTION_OPTIONS = [0.5, 1, 1.5, 2];
-
-// ─── DOM Cache ──────────────────────────
 const DOM = {};
 
-// ─── Init ────────────────────────────────
 document.addEventListener('DOMContentLoaded', () => {
   cacheDOM();
   initApp();
@@ -41,7 +37,6 @@ function cacheDOM() {
   DOM.weeksDropdown = document.getElementById('weeks-dropdown');
   DOM.weeksList = document.getElementById('weeks-list');
   DOM.goalInput = document.getElementById('goal-input');
-  DOM.goalDisplay = document.getElementById('goal-display');
   DOM.tabPlanner = document.getElementById('tab-planner');
   DOM.tabFoods = document.getElementById('tab-foods');
   DOM.foodSearch = document.getElementById('food-mgmt-search');
@@ -53,12 +48,15 @@ function cacheDOM() {
 function initApp() {
   const settings = Storage.getSettings();
   if (settings.lastWeekId) {
-    const saved = Storage.getWeek(settings.lastWeekId);
-    if (saved) { currentWeekId = settings.lastWeekId; currentWeek = saved; }
+    const savedWeek = Storage.getWeek(settings.lastWeekId);
+    if (savedWeek) {
+      currentWeekId = settings.lastWeekId;
+      currentWeek = savedWeek;
+    }
   }
+
   if (!currentWeek) createNewWeekFromDate(new Date());
 
-  // Set goal
   if (DOM.goalInput) {
     DOM.goalInput.value = settings.dailyCalorieGoal || 2000;
   }
@@ -68,146 +66,169 @@ function initApp() {
 }
 
 function bindEvents() {
-  // Tab navigation
   document.querySelectorAll('.tab-btn').forEach(btn => {
     btn.addEventListener('click', () => switchTab(btn.dataset.tab));
   });
 
-  // Week navigation
-  document.getElementById('btn-prev-week').addEventListener('click', () => navigateWeek(-1));
-  document.getElementById('btn-next-week').addEventListener('click', () => navigateWeek(1));
-  document.getElementById('btn-new-week').addEventListener('click', () => {
+  document.getElementById('btn-prev-week')?.addEventListener('click', () => navigateWeek(-1));
+  document.getElementById('btn-next-week')?.addEventListener('click', () => navigateWeek(1));
+  document.getElementById('btn-new-week')?.addEventListener('click', () => {
     createNewWeekFromDate(new Date());
-    renderWeek(); updateStats();
+    renderWeek();
+    updateStats();
     showToast('Yeni hafta oluşturuldu', 'success');
   });
-  DOM.weekDateInput.addEventListener('change', (e) => {
-    if (e.target.value) {
-      createNewWeekFromDate(getMonday(new Date(e.target.value)));
-      renderWeek(); updateStats();
-    }
+
+  DOM.weekDateInput?.addEventListener('change', event => {
+    if (!event.target.value) return;
+    createNewWeekFromDate(getMonday(new Date(event.target.value)));
+    renderWeek();
+    updateStats();
   });
 
-  // Saved weeks
-  document.getElementById('btn-saved-weeks').addEventListener('click', toggleWeeksDropdown);
+  document.getElementById('btn-saved-weeks')?.addEventListener('click', toggleWeeksDropdown);
 
-  // Search
-  DOM.searchOverlay.addEventListener('click', (e) => { if (e.target === DOM.searchOverlay) closeSearch(); });
-  DOM.searchInput.addEventListener('input', (e) => { selectedSearchIndex = -1; renderSearchResults(e.target.value); });
-  DOM.searchInput.addEventListener('keydown', handleSearchKeydown);
+  DOM.searchOverlay?.addEventListener('click', event => {
+    if (event.target === DOM.searchOverlay) closeSearch();
+  });
+  DOM.searchInput?.addEventListener('input', event => {
+    selectedSearchIndex = -1;
+    renderSearchResults(event.target.value);
+  });
+  DOM.searchInput?.addEventListener('keydown', handleSearchKeydown);
 
-  // Calorie goal
-  if (DOM.goalInput) {
-    DOM.goalInput.addEventListener('change', (e) => {
-      const val = parseInt(e.target.value) || 2000;
-      Storage.saveSettings({ dailyCalorieGoal: val });
-      renderWeek(); updateStats();
-      showToast(`Günlük hedef: ${val} kcal`, 'success');
-    });
-  }
+  DOM.goalInput?.addEventListener('change', event => {
+    const value = Number.parseInt(event.target.value, 10) || 2000;
+    Storage.saveSettings({ dailyCalorieGoal: value });
+    renderWeek();
+    updateStats();
+    showToast(`Günlük hedef: ${value} kcal`, 'success');
+  });
 
-  // Auto-fill
   document.getElementById('btn-auto-fill')?.addEventListener('click', autoFillWeek);
-
-  // Print / Export / Import
   document.getElementById('btn-print')?.addEventListener('click', () => window.print());
   document.getElementById('btn-export')?.addEventListener('click', exportCurrentWeek);
   document.getElementById('btn-export-excel')?.addEventListener('click', exportExcel);
   document.getElementById('btn-import')?.addEventListener('click', importWeek);
 
-  // Food management
-  DOM.foodSearch?.addEventListener('input', (e) => {
-    foodMgmtFilter.query = e.target.value;
+  DOM.foodSearch?.addEventListener('input', event => {
+    foodMgmtFilter.query = event.target.value;
     renderFoodList();
   });
+
   document.getElementById('btn-add-food')?.addEventListener('click', toggleAddFoodForm);
 
-  // Food category filter buttons
   document.querySelectorAll('.food-cat-filter-btn').forEach(btn => {
     btn.addEventListener('click', () => {
-      document.querySelectorAll('.food-cat-filter-btn').forEach(b => b.classList.remove('active'));
+      document.querySelectorAll('.food-cat-filter-btn').forEach(item => item.classList.remove('active'));
       btn.classList.add('active');
       foodMgmtFilter.category = btn.dataset.category;
       renderFoodList();
     });
   });
 
-  // Add food form
   document.getElementById('food-form-save')?.addEventListener('click', saveNewFood);
   document.getElementById('food-form-cancel')?.addEventListener('click', () => {
-    DOM.foodAddForm.classList.add('hidden');
+    DOM.foodAddForm?.classList.add('hidden');
   });
 
-  // Keyboard shortcuts
-  document.addEventListener('keydown', (e) => {
-    if (e.key === 'Escape') { closeSearch(); closeWeeksDropdown(); }
+  document.addEventListener('keydown', event => {
+    if (event.key === 'Escape') {
+      closeSearch();
+      closeWeeksDropdown();
+    }
   });
-  document.addEventListener('click', (e) => {
-    if (!e.target.closest('.saved-weeks-wrapper')) closeWeeksDropdown();
+
+  document.addEventListener('click', event => {
+    if (!event.target.closest('.saved-weeks-wrapper')) closeWeeksDropdown();
   });
 }
 
-// ─── Tab Switching ──────────────────────
 function switchTab(tab) {
   activeTab = tab;
-  document.querySelectorAll('.tab-btn').forEach(b => b.classList.toggle('active', b.dataset.tab === tab));
-  DOM.tabPlanner.classList.toggle('hidden', tab !== 'planner');
-  DOM.tabFoods.classList.toggle('hidden', tab !== 'foods');
+  document.querySelectorAll('.tab-btn').forEach(btn => {
+    btn.classList.toggle('active', btn.dataset.tab === tab);
+  });
+
+  DOM.tabPlanner?.classList.toggle('hidden', tab !== 'planner');
+  DOM.tabFoods?.classList.toggle('hidden', tab !== 'foods');
 
   if (tab === 'foods') renderFoodList();
+  if (tab === 'planner') {
+    renderWeek();
+    updateStats();
+  }
 }
 
-// ─── Week Management ────────────────────
 function createNewWeekFromDate(date) {
   const monday = getMonday(date);
   const weekId = getWeekId(monday);
-  const existing = Storage.getWeek(weekId);
-  if (existing) { currentWeekId = weekId; currentWeek = existing; }
-  else {
+  const existingWeek = Storage.getWeek(weekId);
+
+  if (existingWeek) {
+    currentWeekId = weekId;
+    currentWeek = existingWeek;
+  } else {
     currentWeek = Storage.createEmptyWeek(monday);
     currentWeekId = weekId;
     Storage.saveWeek(weekId, currentWeek);
   }
+
   Storage.saveSettings({ lastWeekId: currentWeekId });
 }
 
-function navigateWeek(dir) {
-  const start = new Date(currentWeek.startDate + 'T12:00:00');
-  start.setDate(start.getDate() + (dir * 7));
-  createNewWeekFromDate(start);
-  renderWeek(); updateStats();
+function navigateWeek(direction) {
+  persistCurrentWeek();
+  const startDate = new Date(`${currentWeek.startDate}T12:00:00`);
+  startDate.setDate(startDate.getDate() + (direction * 7));
+  createNewWeekFromDate(startDate);
+  renderWeek();
+  updateStats();
 }
 
 function loadWeek(weekId) {
+  persistCurrentWeek();
   const week = Storage.getWeek(weekId);
-  if (week) {
-    currentWeekId = weekId; currentWeek = week;
-    Storage.saveSettings({ lastWeekId: weekId });
-    renderWeek(); updateStats(); closeWeeksDropdown();
-    showToast('Hafta yüklendi', 'success');
-  }
+  if (!week) return;
+
+  currentWeekId = weekId;
+  currentWeek = week;
+  Storage.saveSettings({ lastWeekId: weekId });
+  renderWeek();
+  updateStats();
+  closeWeeksDropdown();
+  showToast('Hafta yüklendi', 'success');
 }
 
-function deleteWeek(weekId, e) {
-  e.stopPropagation();
-  if (confirm('Bu haftayı silmek istediğinize emin misiniz?')) {
-    Storage.deleteWeek(weekId);
-    if (weekId === currentWeekId) { createNewWeekFromDate(new Date()); renderWeek(); updateStats(); }
-    renderWeeksList();
-    showToast('Hafta silindi', 'info');
+function deleteWeek(weekId, event) {
+  event.stopPropagation();
+  if (!confirm('Bu haftayı silmek istediğinize emin misiniz?')) return;
+
+  persistCurrentWeek();
+  Storage.deleteWeek(weekId);
+  if (weekId === currentWeekId) {
+    createNewWeekFromDate(new Date());
+    renderWeek();
+    updateStats();
   }
+
+  renderWeeksList();
+  showToast('Hafta silindi', 'info');
 }
 
-// ─── Rendering: Week ────────────────────
 function renderWeek() {
+  if (!currentWeek || !DOM.menuGrid) return;
+
   DOM.weekLabel.textContent = currentWeek.label || currentWeekId;
   DOM.weekDateInput.value = currentWeek.startDate;
   DOM.menuGrid.innerHTML = '';
-  currentWeek.days.forEach((day, i) => DOM.menuGrid.appendChild(renderDayCard(day, i)));
+
+  currentWeek.days.forEach((day, index) => {
+    DOM.menuGrid.appendChild(renderDayCard(day, index));
+  });
 }
 
 function renderDayCard(day, dayIndex) {
-  // Ensure portions arrays exist (backward compatibility)
   if (!day.lunchPortions) day.lunchPortions = [1, 1, 1, 1];
   if (!day.dinnerPortions) day.dinnerPortions = [1, 1, 1, 1];
 
@@ -226,8 +247,8 @@ function renderDayCard(day, dayIndex) {
   card.innerHTML = `
     <div class="day-header">
       <div class="day-info">
-        <span class="day-name">${day.dayName}</span>
-        <span class="day-date">${formatDate(day.date)}</span>
+        <span class="day-name">${escapeHtml(day.dayName)}</span>
+        <span class="day-date">${escapeHtml(formatDate(day.date))}</span>
       </div>
       <div class="day-header-actions">
         <button class="btn btn-sm" onclick="autoFillDay(${dayIndex})" title="Bu günü otomatik doldur">Doldur</button>
@@ -259,82 +280,98 @@ function renderDayCard(day, dayIndex) {
         <div class="meal-slots">${renderMealSlots(day.dinner, day.dinnerPortions, dayIndex, 'dinner')}</div>
       </div>
     </div>`;
+
   return card;
 }
 
 function renderMealSlots(slots, portions, dayIndex, mealType) {
-  return slots.map((foodId, i) => {
-    const portion = (portions && portions[i]) || 1;
-    if (foodId) {
-      const food = getFoodById(foodId);
-      if (food) {
-        const cal = Math.round(food.calories * portion);
-        const catColor = FOOD_CATEGORIES[food.category]?.color || '#7a7060';
-        const isFav = Storage.isFavorite(foodId);
-        const portionLabel = portion !== 1 ? `${portion}x` : '';
-        return `
-          <div class="food-slot filled" title="${food.portion}${portionLabel ? ' — ' + portionLabel + ' porsiyon' : ''}">
-            <span class="food-cat-dot" style="background:${catColor}"></span>
-            <span class="food-slot-name" onclick="openSearch(${dayIndex},'${mealType}',${i})">${food.name}</span>
-            ${portionLabel ? `<button class="food-slot-portion" onclick="cyclePortion(${dayIndex},'${mealType}',${i})" title="Porsiyon değiştir">${portionLabel}</button>` : 
-              `<button class="food-slot-portion dim" onclick="cyclePortion(${dayIndex},'${mealType}',${i})" title="Porsiyon değiştir">1x</button>`}
-            <span class="food-slot-cal">${cal}</span>
-            <button class="food-slot-fav ${isFav ? 'active' : ''}" onclick="event.stopPropagation(); toggleFoodFav('${foodId}', ${dayIndex})" title="Favori">★</button>
-            <button class="food-slot-remove" onclick="event.stopPropagation(); removeFood(${dayIndex},'${mealType}',${i})" title="Kaldır">✕</button>
-          </div>`;
-      }
+  const mealTypeArg = toInlineHandlerArg(mealType);
+
+  return slots.map((foodId, index) => {
+    const portion = (portions && portions[index]) || 1;
+
+    if (!foodId) {
+      return `<div class="food-slot empty" onclick="openSearch(${dayIndex},${mealTypeArg},${index})"></div>`;
     }
-    return `<div class="food-slot empty" onclick="openSearch(${dayIndex},'${mealType}',${i})"></div>`;
+
+    const food = getFoodById(foodId);
+    if (!food) {
+      return `<div class="food-slot empty" onclick="openSearch(${dayIndex},${mealTypeArg},${index})"></div>`;
+    }
+
+    const calories = Math.round(food.calories * portion);
+    const catColor = FOOD_CATEGORIES[food.category]?.color || '#7a7060';
+    const isFav = Storage.isFavorite(foodId);
+    const portionLabel = portion !== 1 ? `${portion}x` : '1x';
+    const title = `${food.portion}${portion !== 1 ? ` - ${portionLabel} porsiyon` : ''}`;
+    const foodIdArg = toInlineHandlerArg(foodId);
+
+    return `
+      <div class="food-slot filled" title="${escapeHtml(title)}">
+        <span class="food-cat-dot" style="background:${catColor}"></span>
+        <span class="food-slot-name" onclick="openSearch(${dayIndex},${mealTypeArg},${index})">${escapeHtml(food.name)}</span>
+        <button class="food-slot-portion ${portion === 1 ? 'dim' : ''}" onclick="cyclePortion(${dayIndex},${mealTypeArg},${index})" title="Porsiyon değiştir">${portionLabel}</button>
+        <span class="food-slot-cal">${calories}</span>
+        <button class="food-slot-fav ${isFav ? 'active' : ''}" onclick="event.stopPropagation(); toggleFoodFav(${foodIdArg}, ${dayIndex})" title="Favori">★</button>
+        <button class="food-slot-remove" onclick="event.stopPropagation(); removeFood(${dayIndex},${mealTypeArg},${index})" title="Kaldır">✕</button>
+      </div>`;
   }).join('');
 }
 
-// ─── Portion ────────────────────────────
 function cyclePortion(dayIndex, mealType, slotIndex) {
-  const portionsKey = mealType + 'Portions';
+  const portionsKey = `${mealType}Portions`;
   if (!currentWeek.days[dayIndex][portionsKey]) currentWeek.days[dayIndex][portionsKey] = [1, 1, 1, 1];
-  const current = currentWeek.days[dayIndex][portionsKey][slotIndex] || 1;
-  const idx = PORTION_OPTIONS.indexOf(current);
-  const next = PORTION_OPTIONS[(idx + 1) % PORTION_OPTIONS.length];
-  currentWeek.days[dayIndex][portionsKey][slotIndex] = next;
-  autoSave(); renderWeek(); updateStats();
+
+  const currentValue = currentWeek.days[dayIndex][portionsKey][slotIndex] || 1;
+  const currentIndex = PORTION_OPTIONS.indexOf(currentValue);
+  const nextValue = PORTION_OPTIONS[(currentIndex + 1) % PORTION_OPTIONS.length];
+
+  currentWeek.days[dayIndex][portionsKey][slotIndex] = nextValue;
+  autoSave();
+  renderWeek();
+  updateStats();
 }
 
-// ─── Copy / Paste Day ───────────────────
 function copyDay(dayIndex) {
   const day = currentWeek.days[dayIndex];
   clipboard = {
-    lunch: [...day.lunch], dinner: [...day.dinner],
-    lunchPortions: [...(day.lunchPortions || [1,1,1,1])],
-    dinnerPortions: [...(day.dinnerPortions || [1,1,1,1])]
+    lunch: [...day.lunch],
+    dinner: [...day.dinner],
+    lunchPortions: [...(day.lunchPortions || [1, 1, 1, 1])],
+    dinnerPortions: [...(day.dinnerPortions || [1, 1, 1, 1])]
   };
+
   renderWeek();
   showToast(`${day.dayName} kopyalandı`, 'success');
 }
 
 function pasteDay(dayIndex) {
   if (!clipboard) return;
+
   const day = currentWeek.days[dayIndex];
   day.lunch = [...clipboard.lunch];
   day.dinner = [...clipboard.dinner];
   day.lunchPortions = [...clipboard.lunchPortions];
   day.dinnerPortions = [...clipboard.dinnerPortions];
-  autoSave(); renderWeek(); updateStats();
+
+  autoSave();
+  renderWeek();
+  updateStats();
   showToast(`${day.dayName} yapıştırıldı`, 'success');
 }
 
-// ─── Favorites ──────────────────────────
-function toggleFoodFav(foodId, dayIndex) {
+function toggleFoodFav(foodId) {
   const added = Storage.toggleFavorite(foodId);
   renderWeek();
-  showToast(added ? 'Favorilere eklendi ⭐' : 'Favorilerden çıkarıldı', 'info');
+  showToast(added ? 'Favorilere eklendi ★' : 'Favorilerden çıkarıldı', 'info');
 }
 
-// ─── Search ─────────────────────────────
 function openSearch(dayIndex, mealType, slotIndex) {
   searchTarget = { dayIndex, mealType, slotIndex };
   const day = currentWeek.days[dayIndex];
   const mealLabel = mealType === 'lunch' ? 'Öğle' : 'Akşam';
-  DOM.searchContext.innerHTML = `<span>${day.dayName}</span> — ${mealLabel} Yemeği, Slot ${slotIndex + 1}`;
+
+  DOM.searchContext.innerHTML = `<span>${escapeHtml(day.dayName)}</span> - ${escapeHtml(mealLabel)} Yemeği, Slot ${slotIndex + 1}`;
   DOM.searchOverlay.classList.add('active');
   DOM.searchInput.value = '';
   selectedSearchIndex = -1;
@@ -348,73 +385,94 @@ function closeSearch() {
 }
 
 function renderSearchHome() {
-  const favIds = Storage.getFavorites();
+  const favorites = Storage.getFavorites();
+  const allFoods = getAllFoods();
   let html = '';
 
-  // Favorites section
-  if (favIds.length > 0) {
-    html += '<div class="search-category-header">⭐ Favoriler</div>';
-    let idx = 0;
-    favIds.forEach(id => {
-      const food = getFoodById(id);
-      if (food) { html += renderSearchItem(food, idx++, true); }
+  if (favorites.length > 0) {
+    html += '<div class="search-category-header">★ Favoriler</div>';
+    let index = 0;
+    favorites.forEach(foodId => {
+      const food = getFoodById(foodId);
+      if (food) html += renderSearchItem(food, index++);
     });
     html += '<div style="height:8px"></div>';
   }
 
-  // Category grid
   html += '<div class="category-grid">';
-  for (const [key, cat] of Object.entries(FOOD_CATEGORIES)) {
-    const count = getAllFoods().filter(f => f.category === key).length;
+  Object.entries(FOOD_CATEGORIES).forEach(([key, category]) => {
+    const count = allFoods.filter(food => food.category === key).length;
     html += `
-      <div class="category-btn" onclick="browseCategory('${key}')">
-        <span class="category-btn-icon">${cat.icon}</span>
-        <span class="category-btn-name">${cat.name} (${count})</span>
+      <div class="category-btn" onclick="browseCategory(${toInlineHandlerArg(key)})">
+        <span class="category-btn-icon">${category.icon}</span>
+        <span class="category-btn-name">${escapeHtml(category.name)} (${count})</span>
       </div>`;
-  }
+  });
   html += '</div>';
+
   DOM.searchResults.innerHTML = html;
 }
 
-function browseCategory(category) {
-  const foods = getFoodsByCategory(category);
-  const cat = FOOD_CATEGORIES[category];
-  let html = `<div class="search-category-header">${cat.icon} ${cat.name}</div>`;
-  foods.forEach((food, i) => { html += renderSearchItem(food, i); });
+function browseCategory(categoryKey) {
+  const foods = getFoodsByCategory(categoryKey);
+  const category = FOOD_CATEGORIES[categoryKey];
+  if (!category) return;
+
+  let html = `<div class="search-category-header">${category.icon} ${escapeHtml(category.name)}</div>`;
+  foods.forEach((food, index) => {
+    html += renderSearchItem(food, index);
+  });
+
   DOM.searchResults.innerHTML = html;
   DOM.searchInput.focus();
 }
 
 function renderSearchResults(query) {
-  if (!query || !query.trim()) { renderSearchHome(); return; }
-  const results = searchFoods(query);
-  if (results.length === 0) {
-    DOM.searchResults.innerHTML = `<div class="search-empty"><div class="search-empty-icon">🔍</div>"${query}" için sonuç bulunamadı</div>`;
+  if (!query || !query.trim()) {
+    renderSearchHome();
     return;
   }
-  const grouped = {};
-  results.forEach(f => { if (!grouped[f.category]) grouped[f.category] = []; grouped[f.category].push(f); });
-  let html = '', gi = 0;
-  for (const [ck, foods] of Object.entries(grouped)) {
-    const cat = FOOD_CATEGORIES[ck];
-    html += `<div class="search-category-header">${cat?.icon || '🍽️'} ${cat?.name || ck}</div>`;
-    foods.forEach(f => { html += renderSearchItem(f, gi++); });
+
+  const results = searchFoods(query);
+  if (results.length === 0) {
+    DOM.searchResults.innerHTML = `<div class="search-empty"><div class="search-empty-icon">🔍</div>"${escapeHtml(query)}" için sonuç bulunamadı</div>`;
+    return;
   }
+
+  const groups = {};
+  results.forEach(food => {
+    if (!groups[food.category]) groups[food.category] = [];
+    groups[food.category].push(food);
+  });
+
+  let html = '';
+  let globalIndex = 0;
+
+  Object.keys(FOOD_CATEGORIES).forEach(categoryKey => {
+    if (!groups[categoryKey]) return;
+    const category = FOOD_CATEGORIES[categoryKey];
+    html += `<div class="search-category-header">${category.icon} ${escapeHtml(category.name)}</div>`;
+    groups[categoryKey].forEach(food => {
+      html += renderSearchItem(food, globalIndex++);
+    });
+  });
+
   DOM.searchResults.innerHTML = html;
 }
 
-function renderSearchItem(food, index, isFav = false) {
+function renderSearchItem(food, index) {
   const catColor = FOOD_CATEGORIES[food.category]?.color || '#7a7060';
   const selected = index === selectedSearchIndex ? ' selected' : '';
-  const favStar = Storage.isFavorite(food.id) ? '★' : '☆';
+  const isFavorite = Storage.isFavorite(food.id);
+  const foodIdArg = toInlineHandlerArg(food.id);
+
   return `
-    <div class="search-result-item${selected}" data-index="${index}" data-food-id="${food.id}">
-      <button class="search-fav-btn ${Storage.isFavorite(food.id) ? 'active' : ''}" 
-              onclick="event.stopPropagation(); toggleSearchFav('${food.id}')" title="Favori">${favStar}</button>
+    <div class="search-result-item${selected}" data-index="${index}" data-food-id="${escapeHtml(food.id)}">
+      <button class="search-fav-btn ${isFavorite ? 'active' : ''}" onclick="event.stopPropagation(); toggleSearchFav(${foodIdArg})" title="Favori">${isFavorite ? '★' : '☆'}</button>
       <span class="search-result-dot" style="background:${catColor}"></span>
-      <span class="search-result-name" onclick="selectFood('${food.id}')">${food.name}</span>
-      <span class="search-result-portion">${food.portion}</span>
-      <span class="search-result-cal" onclick="selectFood('${food.id}')">${food.calories} kcal</span>
+      <span class="search-result-name" onclick="selectFood(${foodIdArg})">${escapeHtml(food.name)}</span>
+      <span class="search-result-portion">${escapeHtml(food.portion)}</span>
+      <span class="search-result-cal" onclick="selectFood(${foodIdArg})">${food.calories} kcal</span>
     </div>`;
 }
 
@@ -427,49 +485,76 @@ function toggleSearchFav(foodId) {
 
 function selectFood(foodId) {
   if (!searchTarget) return;
+
+  const food = getFoodById(foodId);
+  if (!food) {
+    showToast('Yemek bulunamadı', 'error');
+    return;
+  }
+
   const { dayIndex, mealType, slotIndex } = searchTarget;
   currentWeek.days[dayIndex][mealType][slotIndex] = foodId;
-  // Reset portion to 1
-  const pk = mealType + 'Portions';
-  if (!currentWeek.days[dayIndex][pk]) currentWeek.days[dayIndex][pk] = [1,1,1,1];
-  currentWeek.days[dayIndex][pk][slotIndex] = 1;
 
-  autoSave(); closeSearch(); renderWeek(); updateStats();
-  const food = getFoodById(foodId);
+  const portionsKey = `${mealType}Portions`;
+  if (!currentWeek.days[dayIndex][portionsKey]) currentWeek.days[dayIndex][portionsKey] = [1, 1, 1, 1];
+  currentWeek.days[dayIndex][portionsKey][slotIndex] = 1;
+
+  autoSave();
+  closeSearch();
+  renderWeek();
+  updateStats();
   showToast(`${food.name} eklendi (${food.calories} kcal)`, 'success');
 }
 
 function removeFood(dayIndex, mealType, slotIndex) {
-  const food = getFoodById(currentWeek.days[dayIndex][mealType][slotIndex]);
+  const foodId = currentWeek.days[dayIndex][mealType][slotIndex];
+  const food = getFoodById(foodId);
+
   currentWeek.days[dayIndex][mealType][slotIndex] = null;
-  autoSave(); renderWeek(); updateStats();
+  const portionsKey = `${mealType}Portions`;
+  if (currentWeek.days[dayIndex][portionsKey]) {
+    currentWeek.days[dayIndex][portionsKey][slotIndex] = 1;
+  }
+
+  autoSave();
+  renderWeek();
+  updateStats();
   if (food) showToast(`${food.name} kaldırıldı`, 'info');
 }
 
-function handleSearchKeydown(e) {
+function handleSearchKeydown(event) {
   const items = DOM.searchResults.querySelectorAll('.search-result-item');
   if (!items.length) return;
-  if (e.key === 'ArrowDown') { e.preventDefault(); selectedSearchIndex = Math.min(selectedSearchIndex + 1, items.length - 1); updateSearchSel(items); }
-  else if (e.key === 'ArrowUp') { e.preventDefault(); selectedSearchIndex = Math.max(selectedSearchIndex - 1, 0); updateSearchSel(items); }
-  else if (e.key === 'Enter') { e.preventDefault(); if (selectedSearchIndex >= 0 && items[selectedSearchIndex]) selectFood(items[selectedSearchIndex].dataset.foodId); }
+
+  if (event.key === 'ArrowDown') {
+    event.preventDefault();
+    selectedSearchIndex = Math.min(selectedSearchIndex + 1, items.length - 1);
+    updateSearchSelection(items);
+  } else if (event.key === 'ArrowUp') {
+    event.preventDefault();
+    selectedSearchIndex = Math.max(selectedSearchIndex - 1, 0);
+    updateSearchSelection(items);
+  } else if (event.key === 'Enter') {
+    event.preventDefault();
+    const target = items[selectedSearchIndex];
+    if (selectedSearchIndex >= 0 && target) selectFood(target.dataset.foodId);
+  }
 }
 
-function updateSearchSel(items) {
-  items.forEach((item, i) => {
-    item.classList.toggle('selected', i === selectedSearchIndex);
-    if (i === selectedSearchIndex) item.scrollIntoView({ block: 'nearest' });
+function updateSearchSelection(items) {
+  items.forEach((item, index) => {
+    item.classList.toggle('selected', index === selectedSearchIndex);
+    if (index === selectedSearchIndex) item.scrollIntoView({ block: 'nearest' });
   });
 }
 
-// ─── Calorie Calculations ───────────────
 function calcMealCalories(slots, portions) {
-  return slots.reduce((total, foodId, i) => {
-    if (foodId) {
-      const food = getFoodById(foodId);
-      const portion = (portions && portions[i]) || 1;
-      return total + (food ? Math.round(food.calories * portion) : 0);
-    }
-    return total;
+  return slots.reduce((total, foodId, index) => {
+    if (!foodId) return total;
+
+    const food = getFoodById(foodId);
+    const portion = (portions && portions[index]) || 1;
+    return total + (food ? Math.round(food.calories * portion) : 0);
   }, 0);
 }
 
@@ -478,99 +563,113 @@ function calcDayCalories(day) {
 }
 
 function calcWeekCalories() {
-  return currentWeek.days.reduce((t, d) => t + calcDayCalories(d), 0);
+  return currentWeek.days.reduce((total, day) => total + calcDayCalories(day), 0);
 }
 
 function countMeals() {
-  let c = 0;
-  currentWeek.days.forEach(d => { if (d.lunch.some(f => f)) c++; if (d.dinner.some(f => f)) c++; });
-  return c;
+  let count = 0;
+  currentWeek.days.forEach(day => {
+    if (day.lunch.some(Boolean)) count += 1;
+    if (day.dinner.some(Boolean)) count += 1;
+  });
+  return count;
 }
 
 function countFoods() {
-  let c = 0;
-  currentWeek.days.forEach(d => { c += d.lunch.filter(f => f).length + d.dinner.filter(f => f).length; });
-  return c;
+  let count = 0;
+  currentWeek.days.forEach(day => {
+    count += day.lunch.filter(Boolean).length;
+    count += day.dinner.filter(Boolean).length;
+  });
+  return count;
 }
 
 function updateStats() {
-  const weekCal = calcWeekCalories();
-  const daysWithFood = currentWeek.days.filter(d => calcDayCalories(d) > 0).length;
-  const avgDaily = daysWithFood > 0 ? Math.round(weekCal / daysWithFood) : 0;
-  const goal = Storage.getSettings().dailyCalorieGoal || 2000;
+  const weekCalories = calcWeekCalories();
+  const daysWithFood = currentWeek.days.filter(day => calcDayCalories(day) > 0).length;
+  const avgDaily = daysWithFood > 0 ? Math.round(weekCalories / daysWithFood) : 0;
 
-  animateNumber(DOM.statWeeklyCal, weekCal);
+  animateNumber(DOM.statWeeklyCal, weekCalories);
   animateNumber(DOM.statDailyCal, avgDaily);
   if (DOM.statMealCount) DOM.statMealCount.textContent = countMeals();
   if (DOM.statFoodCount) DOM.statFoodCount.textContent = countFoods();
 }
 
-function animateNumber(el, target) {
-  const current = parseInt(el.textContent.replace(/\./g, '')) || 0;
+function animateNumber(element, target) {
+  if (!element) return;
+
+  const current = Number.parseInt(element.textContent.replace(/\./g, ''), 10) || 0;
   if (current === target) return;
-  const duration = 400, start = performance.now();
-  function step(ts) {
-    const p = Math.min((ts - start) / duration, 1);
-    const eased = 1 - Math.pow(1 - p, 3);
-    el.textContent = Math.round(current + (target - current) * eased).toLocaleString('tr-TR');
-    if (p < 1) requestAnimationFrame(step);
+
+  const duration = 400;
+  const start = performance.now();
+
+  function step(timestamp) {
+    const progress = Math.min((timestamp - start) / duration, 1);
+    const eased = 1 - Math.pow(1 - progress, 3);
+    element.textContent = Math.round(current + (target - current) * eased).toLocaleString('tr-TR');
+    if (progress < 1) requestAnimationFrame(step);
   }
+
   requestAnimationFrame(step);
 }
 
-// ─── Save ───────────────────────────────
-let saveTimeout;
 function autoSave() {
   clearTimeout(saveTimeout);
-  saveTimeout = setTimeout(() => Storage.saveWeek(currentWeekId, currentWeek), 300);
+  const weekIdSnapshot = currentWeekId;
+  const weekSnapshot = JSON.parse(JSON.stringify(currentWeek));
+  saveTimeout = setTimeout(() => {
+    Storage.saveWeek(weekIdSnapshot, weekSnapshot);
+  }, 300);
 }
 
-// ─── Export / Import ────────────────────
 function exportCurrentWeek() {
+  persistCurrentWeek();
   const json = Storage.exportWeek(currentWeekId);
   if (!json) return;
-  const blob = new Blob([json], { type: 'application/json' });
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement('a');
-  a.href = url; a.download = `menu_${currentWeek.startDate}.json`;
-  a.click(); URL.revokeObjectURL(url);
+
+  downloadBlob(new Blob([json], { type: 'application/json' }), `menu_${currentWeek.startDate}.json`);
   showToast('JSON olarak dışa aktarıldı', 'success');
 }
 
 function exportExcel() {
+  persistCurrentWeek();
   const goal = Storage.getSettings().dailyCalorieGoal || 2000;
-  const BOM = '\uFEFF'; // UTF-8 BOM for Turkish characters
+  const BOM = '\uFEFF';
 
-  const S = {
-    title:    'background:#d97016;color:#fff;font-size:16pt;font-weight:bold;font-family:Calibri;text-align:center;padding:12px;',
+  const styles = {
+    title: 'background:#d97016;color:#fff;font-size:16pt;font-weight:bold;font-family:Calibri;text-align:center;padding:12px;',
     subtitle: 'background:#f5f1ea;color:#6b5f50;font-size:10pt;font-family:Calibri;text-align:center;padding:6px;',
-    colHead:  'background:#2c2418;color:#faf8f4;font-size:9pt;font-weight:bold;font-family:Calibri;text-align:center;padding:6px 8px;border:1px solid #1a1610;',
-    dayCell:  'background:#e8940b;color:#fff;font-size:11pt;font-weight:bold;font-family:Calibri;padding:6px 10px;border:1px solid #c2610a;vertical-align:middle;',
+    colHead: 'background:#2c2418;color:#faf8f4;font-size:9pt;font-weight:bold;font-family:Calibri;text-align:center;padding:6px 8px;border:1px solid #1a1610;',
+    dayCell: 'background:#e8940b;color:#fff;font-size:11pt;font-weight:bold;font-family:Calibri;padding:6px 10px;border:1px solid #c2610a;vertical-align:middle;',
     mealCell: 'font-size:9pt;font-weight:bold;font-family:Calibri;padding:5px 8px;text-align:center;vertical-align:middle;',
     foodCell: 'font-size:10pt;font-family:Calibri;padding:4px 8px;',
-    calCell:  'font-size:10pt;font-family:Calibri;padding:4px 6px;text-align:right;color:#b85c0a;font-weight:bold;',
-    mealTot:  'font-size:10pt;font-family:Calibri;font-weight:bold;padding:4px 8px;text-align:right;',
-    dayTot:   'background:#fdf6e8;font-size:10pt;font-family:Calibri;font-weight:bold;padding:6px 8px;border:1px solid #e0d8cc;',
-    pctOk:    'background:#e8f5e9;color:#2e7d32;font-weight:bold;text-align:center;font-family:Calibri;font-size:10pt;padding:4px;',
-    pctWarn:  'background:#fff3e0;color:#e65100;font-weight:bold;text-align:center;font-family:Calibri;font-size:10pt;padding:4px;',
-    pctOver:  'background:#ffebee;color:#c62828;font-weight:bold;text-align:center;font-family:Calibri;font-size:10pt;padding:4px;',
-    summLabel:'background:#2c2418;color:#faf8f4;font-size:11pt;font-weight:bold;font-family:Calibri;padding:8px 12px;text-align:right;border:1px solid #1a1610;',
-    summVal:  'background:#d97016;color:#fff;font-size:12pt;font-weight:bold;font-family:Calibri;padding:8px 12px;text-align:center;border:1px solid #c2610a;',
-    empty:    'border:none;padding:2px;',
-    border:   'border:1px solid #e0d8cc;',
+    calCell: 'font-size:10pt;font-family:Calibri;padding:4px 6px;text-align:right;color:#b85c0a;font-weight:bold;',
+    mealTot: 'font-size:10pt;font-family:Calibri;font-weight:bold;padding:4px 8px;text-align:right;',
+    dayTot: 'background:#fdf6e8;font-size:10pt;font-family:Calibri;font-weight:bold;padding:6px 8px;border:1px solid #e0d8cc;',
+    pctOk: 'background:#e8f5e9;color:#2e7d32;font-weight:bold;text-align:center;font-family:Calibri;font-size:10pt;padding:4px;',
+    pctWarn: 'background:#fff3e0;color:#e65100;font-weight:bold;text-align:center;font-family:Calibri;font-size:10pt;padding:4px;',
+    pctOver: 'background:#ffebee;color:#c62828;font-weight:bold;text-align:center;font-family:Calibri;font-size:10pt;padding:4px;',
+    summLabel: 'background:#2c2418;color:#faf8f4;font-size:11pt;font-weight:bold;font-family:Calibri;padding:8px 12px;text-align:right;border:1px solid #1a1610;',
+    summVal: 'background:#d97016;color:#fff;font-size:12pt;font-weight:bold;font-family:Calibri;padding:8px 12px;text-align:center;border:1px solid #c2610a;',
+    empty: 'border:none;padding:2px;',
+    border: 'border:1px solid #e0d8cc;'
   };
 
-  const rc = (i) => i % 2 === 0
-    ? 'background:#faf8f4;' // açık krem
-    : 'background:#f0ece4;'; // koyu krem
+  const rowColor = index => (index % 2 === 0 ? 'background:#faf8f4;' : 'background:#f0ece4;');
 
-  function foodInfo(foodId, portionArr, idx) {
+  function foodInfo(foodId, portions, index) {
     const food = foodId ? getFoodById(foodId) : null;
-    const portion = (portionArr && portionArr[idx]) || 1;
-    if (!food) return { name: '', cal: 0, portionTxt: '' };
-    const cal = Math.round(food.calories * portion);
-    const pTxt = portion !== 1 ? ` (${portion}x)` : '';
-    return { name: food.name + pTxt, cal, portionTxt: food.portion };
+    const portion = (portions && portions[index]) || 1;
+    if (!food) return { name: '', cal: 0 };
+
+    const calories = Math.round(food.calories * portion);
+    const portionText = portion !== 1 ? ` (${portion}x)` : '';
+
+    return {
+      name: sanitizeExcelText(food.name + portionText),
+      cal: calories
+    };
   }
 
   let html = `<html xmlns:o="urn:schemas-microsoft-com:office:office" xmlns:x="urn:schemas-microsoft-com:office:excel" xmlns="http://www.w3.org/TR/REC-html40">
@@ -582,231 +681,258 @@ function exportExcel() {
 </head><body>
 <table border="0" cellpadding="0" cellspacing="0">`;
 
-  // ── BAŞLIK ──
-  html += `<tr><td colspan="11" style="${S.title}">HAFTALIK YEMEK MENÜSÜ</td></tr>`;
-  html += `<tr><td colspan="11" style="${S.subtitle}">${currentWeek.label || currentWeekId}  ·  Günlük Hedef: ${goal} kcal</td></tr>`;
-  html += `<tr><td colspan="11" style="${S.empty}">&nbsp;</td></tr>`;
+  html += `<tr><td colspan="11" style="${styles.title}">HAFTALIK YEMEK MENÜSÜ</td></tr>`;
+  html += `<tr><td colspan="11" style="${styles.subtitle}">${sanitizeExcelText(currentWeek.label || currentWeekId)} · Günlük Hedef: ${goal} kcal</td></tr>`;
+  html += `<tr><td colspan="11" style="${styles.empty}">&nbsp;</td></tr>`;
 
-  // ── SÜTUN BAŞLIKLARI ──
   html += `<tr>
-    <td style="${S.colHead}" width="100">GÜN</td>
-    <td style="${S.colHead}" width="65">ÖĞÜN</td>
-    <td style="${S.colHead}" width="180">1. Yemek</td>
-    <td style="${S.colHead}" width="55">kcal</td>
-    <td style="${S.colHead}" width="180">2. Yemek</td>
-    <td style="${S.colHead}" width="55">kcal</td>
-    <td style="${S.colHead}" width="180">3. Yemek</td>
-    <td style="${S.colHead}" width="55">kcal</td>
-    <td style="${S.colHead}" width="180">4. Yemek</td>
-    <td style="${S.colHead}" width="55">kcal</td>
-    <td style="${S.colHead}" width="80">TOPLAM</td>
+    <td style="${styles.colHead}" width="100">GÜN</td>
+    <td style="${styles.colHead}" width="65">ÖĞÜN</td>
+    <td style="${styles.colHead}" width="180">1. Yemek</td>
+    <td style="${styles.colHead}" width="55">kcal</td>
+    <td style="${styles.colHead}" width="180">2. Yemek</td>
+    <td style="${styles.colHead}" width="55">kcal</td>
+    <td style="${styles.colHead}" width="180">3. Yemek</td>
+    <td style="${styles.colHead}" width="55">kcal</td>
+    <td style="${styles.colHead}" width="180">4. Yemek</td>
+    <td style="${styles.colHead}" width="55">kcal</td>
+    <td style="${styles.colHead}" width="80">TOPLAM</td>
   </tr>`;
 
   let weekTotal = 0;
 
-  currentWeek.days.forEach((day, di) => {
-    if (!day.lunchPortions) day.lunchPortions = [1,1,1,1];
-    if (!day.dinnerPortions) day.dinnerPortions = [1,1,1,1];
+  currentWeek.days.forEach((day, dayIndex) => {
+    if (!day.lunchPortions) day.lunchPortions = [1, 1, 1, 1];
+    if (!day.dinnerPortions) day.dinnerPortions = [1, 1, 1, 1];
 
-    const bgRow = rc(di);
-
-    // Öğle bilgileri
-    const l = [0,1,2,3].map(i => foodInfo(day.lunch[i], day.lunchPortions, i));
-    const lunchCal = l.reduce((s,f) => s + f.cal, 0);
-
-    // Akşam bilgileri
-    const d = [0,1,2,3].map(i => foodInfo(day.dinner[i], day.dinnerPortions, i));
-    const dinnerCal = d.reduce((s,f) => s + f.cal, 0);
-
+    const bgRow = rowColor(dayIndex);
+    const lunchItems = [0, 1, 2, 3].map(index => foodInfo(day.lunch[index], day.lunchPortions, index));
+    const dinnerItems = [0, 1, 2, 3].map(index => foodInfo(day.dinner[index], day.dinnerPortions, index));
+    const lunchCal = lunchItems.reduce((sum, item) => sum + item.cal, 0);
+    const dinnerCal = dinnerItems.reduce((sum, item) => sum + item.cal, 0);
     const dayTotal = lunchCal + dinnerCal;
+    const pct = goal > 0 ? Math.round((dayTotal / goal) * 100) : 0;
+    const pctStyle = pct > 100 ? styles.pctOver : pct > 85 ? styles.pctWarn : styles.pctOk;
+
     weekTotal += dayTotal;
 
-    // ÖĞLE SATIRI
     html += `<tr>
-      <td rowspan="2" style="${S.dayCell}">${day.dayName}<br><span style="font-size:8pt;font-weight:normal">${formatDate(day.date)}</span></td>
-      <td style="${S.mealCell}${bgRow}border:1px solid #e0d8cc;">Öğle</td>`;
-    l.forEach(f => {
-      html += `<td style="${S.foodCell}${bgRow}${S.border}">${f.name || '—'}</td>`;
-      html += `<td style="${S.calCell}${bgRow}${S.border}">${f.cal || ''}</td>`;
+      <td rowspan="2" style="${styles.dayCell}">${sanitizeExcelText(day.dayName)}<br><span style="font-size:8pt;font-weight:normal">${sanitizeExcelText(formatDate(day.date))}</span></td>
+      <td style="${styles.mealCell}${bgRow}border:1px solid #e0d8cc;">Öğle</td>`;
+    lunchItems.forEach(item => {
+      html += `<td style="${styles.foodCell}${bgRow}${styles.border}">${item.name || '&mdash;'}</td>`;
+      html += `<td style="${styles.calCell}${bgRow}${styles.border}">${item.cal || ''}</td>`;
     });
-    html += `<td style="${S.mealTot}${bgRow}${S.border}color:#b85c0a;">${lunchCal}</td></tr>`;
+    html += `<td style="${styles.mealTot}${bgRow}${styles.border}color:#b85c0a;">${lunchCal}</td></tr>`;
 
-    // AKŞAM SATIRI
     html += `<tr>
-      <td style="${S.mealCell}${bgRow}border:1px solid #e0d8cc;">Akşam</td>`;
-    d.forEach(f => {
-      html += `<td style="${S.foodCell}${bgRow}${S.border}">${f.name || '—'}</td>`;
-      html += `<td style="${S.calCell}${bgRow}${S.border}">${f.cal || ''}</td>`;
+      <td style="${styles.mealCell}${bgRow}border:1px solid #e0d8cc;">Akşam</td>`;
+    dinnerItems.forEach(item => {
+      html += `<td style="${styles.foodCell}${bgRow}${styles.border}">${item.name || '&mdash;'}</td>`;
+      html += `<td style="${styles.calCell}${bgRow}${styles.border}">${item.cal || ''}</td>`;
     });
-    html += `<td style="${S.mealTot}${bgRow}${S.border}color:#b85c0a;">${dinnerCal}</td></tr>`;
+    html += `<td style="${styles.mealTot}${bgRow}${styles.border}color:#b85c0a;">${dinnerCal}</td></tr>`;
 
-    // GÜN TOPLAM SATIRI
-    const pct = goal > 0 ? Math.round((dayTotal / goal) * 100) : 0;
-    const pctStyle = pct > 100 ? S.pctOver : pct > 85 ? S.pctWarn : S.pctOk;
     html += `<tr>
-      <td colspan="9" style="${S.dayTot}text-align:right;">${day.dayName} Toplam</td>
-      <td style="${pctStyle}${S.border}">%${pct}</td>
-      <td style="${S.dayTot}text-align:center;color:#b85c0a;font-size:11pt;">${dayTotal} kcal</td>
+      <td colspan="9" style="${styles.dayTot}text-align:right;">${sanitizeExcelText(day.dayName)} Toplam</td>
+      <td style="${pctStyle}${styles.border}">%${pct}</td>
+      <td style="${styles.dayTot}text-align:center;color:#b85c0a;font-size:11pt;">${dayTotal} kcal</td>
     </tr>`;
 
-    // Ayırıcı
-    html += `<tr><td colspan="11" style="${S.empty};height:4px"></td></tr>`;
+    html += `<tr><td colspan="11" style="${styles.empty};height:4px"></td></tr>`;
   });
 
-  // HAFTALIK OZET
-  html += `<tr><td colspan="11" style="${S.empty}">&nbsp;</td></tr>`;
   const avgDaily = Math.round(weekTotal / 7);
-  const daysWithFood = currentWeek.days.filter(d => calcDayCalories(d) > 0).length;
-  const realAvg = daysWithFood > 0 ? Math.round(weekTotal / daysWithFood) : 0;
+  const daysWithFood = currentWeek.days.filter(day => calcDayCalories(day) > 0).length;
+  const activeAvg = daysWithFood > 0 ? Math.round(weekTotal / daysWithFood) : 0;
 
-  html += `<tr><td colspan="9" style="${S.summLabel}">HAFTALIK TOPLAM</td><td colspan="2" style="${S.summVal}">${weekTotal} kcal</td></tr>`;
-  html += `<tr><td colspan="9" style="${S.summLabel}">GÜNLÜK ORTALAMA (7 gün)</td><td colspan="2" style="${S.summVal}">${avgDaily} kcal</td></tr>`;
+  html += `<tr><td colspan="11" style="${styles.empty}">&nbsp;</td></tr>`;
+  html += `<tr><td colspan="9" style="${styles.summLabel}">HAFTALIK TOPLAM</td><td colspan="2" style="${styles.summVal}">${weekTotal} kcal</td></tr>`;
+  html += `<tr><td colspan="9" style="${styles.summLabel}">GÜNLÜK ORTALAMA (7 gün)</td><td colspan="2" style="${styles.summVal}">${avgDaily} kcal</td></tr>`;
   if (daysWithFood > 0 && daysWithFood < 7) {
-    html += `<tr><td colspan="9" style="${S.summLabel}">GÜNLÜK ORTALAMA (${daysWithFood} aktif gün)</td><td colspan="2" style="${S.summVal}">${realAvg} kcal</td></tr>`;
+    html += `<tr><td colspan="9" style="${styles.summLabel}">GÜNLÜK ORTALAMA (${daysWithFood} aktif gün)</td><td colspan="2" style="${styles.summVal}">${activeAvg} kcal</td></tr>`;
   }
-  html += `<tr><td colspan="9" style="${S.summLabel}">GÜNLÜK HEDEF</td><td colspan="2" style="${S.summVal}">${goal} kcal</td></tr>`;
+  html += `<tr><td colspan="9" style="${styles.summLabel}">GÜNLÜK HEDEF</td><td colspan="2" style="${styles.summVal}">${goal} kcal</td></tr>`;
+  html += '</table></body></html>';
 
-  html += `</table></body></html>`;
-
-  const blob = new Blob([BOM + html], { type: 'application/vnd.ms-excel;charset=utf-8' });
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement('a');
-  a.href = url;
-  a.download = `menu_${currentWeek.startDate}.xls`;
-  a.click();
-  URL.revokeObjectURL(url);
+  downloadBlob(new Blob([BOM + html], { type: 'application/vnd.ms-excel;charset=utf-8' }), `menu_${currentWeek.startDate}.xls`);
   showToast('Excel olarak indirildi', 'success');
 }
 
 function importWeek() {
   const input = document.createElement('input');
-  input.type = 'file'; input.accept = '.json';
-  input.onchange = (e) => {
-    const file = e.target.files[0];
+  input.type = 'file';
+  input.accept = '.json';
+  input.onchange = event => {
+    const file = event.target.files[0];
     if (!file) return;
+
     const reader = new FileReader();
-    reader.onload = (ev) => {
-      const result = Storage.importWeek(ev.target.result);
-      if (result.success) { loadWeek(result.weekId); showToast('Menü içe aktarıldı', 'success'); }
-      else showToast('Hata: ' + result.error, 'error');
+    reader.onload = loadEvent => {
+      clearTimeout(saveTimeout);
+      const result = Storage.importWeek(loadEvent.target.result);
+      if (!result.success) {
+        showToast(`Hata: ${result.error}`, 'error');
+        return;
+      }
+
+      loadWeek(result.weekId);
+      const summary = [];
+      if (result.importedCustomFoods) summary.push(`${result.importedCustomFoods} özel yemek`);
+      if (result.importedOverrides) summary.push(`${result.importedOverrides} kalori override`);
+      showToast(summary.length ? `Menü içe aktarıldı (${summary.join(', ')})` : 'Menü içe aktarıldı', 'success');
     };
     reader.readAsText(file);
   };
   input.click();
 }
 
-// ─── Weeks Dropdown ─────────────────────
 function toggleWeeksDropdown() {
   const active = DOM.weeksDropdown.classList.contains('active');
   if (active) closeWeeksDropdown();
-  else { renderWeeksList(); DOM.weeksDropdown.classList.add('active'); }
+  else {
+    renderWeeksList();
+    DOM.weeksDropdown.classList.add('active');
+  }
 }
-function closeWeeksDropdown() { DOM.weeksDropdown.classList.remove('active'); }
+
+function closeWeeksDropdown() {
+  DOM.weeksDropdown.classList.remove('active');
+}
+
 function renderWeeksList() {
   const weeks = Storage.getWeekList();
-  if (!weeks.length) { DOM.weeksList.innerHTML = '<div style="padding:16px;color:var(--text-muted);text-align:center">Kayıtlı hafta yok</div>'; return; }
-  DOM.weeksList.innerHTML = weeks.map(w => `
-    <div class="week-item ${w.id === currentWeekId ? 'active' : ''}" onclick="loadWeek('${w.id}')">
-      <span class="week-item-label">${w.label}</span>
-      <button class="week-item-delete" onclick="deleteWeek('${w.id}', event)" title="Sil">🗑️</button>
-    </div>`).join('');
-}
-
-// ════════════════════════════════════════
-//  FOOD MANAGEMENT PAGE
-// ════════════════════════════════════════
-
-function renderFoodList() {
-  const allFoods = getAllFoods();
-  let filtered = allFoods;
-
-  // Category filter
-  if (foodMgmtFilter.category !== 'all') {
-    filtered = filtered.filter(f => f.category === foodMgmtFilter.category);
-  }
-
-  // Text search
-  if (foodMgmtFilter.query) {
-    const q = normalizeTurkish(foodMgmtFilter.query.toLowerCase());
-    filtered = filtered.filter(f => normalizeTurkish(f.name.toLowerCase()).includes(q));
-  }
-
-  // Sort by category then name
-  filtered.sort((a, b) => {
-    const catCmp = (a.category || '').localeCompare(b.category || '');
-    return catCmp !== 0 ? catCmp : a.name.localeCompare(b.name, 'tr');
-  });
-
-  if (DOM.foodCount) DOM.foodCount.textContent = `${filtered.length} / ${allFoods.length} yemek`;
-
-  if (!filtered.length) {
-    DOM.foodList.innerHTML = '<div class="food-mgmt-empty">Yemek bulunamadı</div>';
+  if (!weeks.length) {
+    DOM.weeksList.innerHTML = '<div style="padding:16px;color:var(--text-muted);text-align:center">Kayıtlı hafta yok</div>';
     return;
   }
 
-  let currentCat = '';
-  let html = '';
-  filtered.forEach(food => {
-    if (food.category !== currentCat) {
-      currentCat = food.category;
-      const cat = FOOD_CATEGORIES[currentCat];
-      html += `<div class="food-mgmt-cat-header">${cat?.icon || '🍽️'} ${cat?.name || currentCat}</div>`;
-    }
-    const catColor = FOOD_CATEGORIES[food.category]?.color || '#7a7060';
-    const isCustom = food.isCustom || isCustomFood(food.id);
-    const overrides = Storage.getCalorieOverrides();
-    const isOverridden = overrides[food.id] !== undefined && !isCustom;
-    const originalCal = isOverridden ? getOriginalCalories(food.id) : null;
-    const isFav = Storage.isFavorite(food.id);
+  DOM.weeksList.innerHTML = weeks.map(week => `
+    <div class="week-item ${week.id === currentWeekId ? 'active' : ''}" onclick="loadWeek(${toInlineHandlerArg(week.id)})">
+      <span class="week-item-label">${escapeHtml(week.label)}</span>
+      <button class="week-item-delete" onclick="deleteWeek(${toInlineHandlerArg(week.id)}, event)" title="Sil">🗑️</button>
+    </div>`).join('');
+}
 
-    html += `
-      <div class="food-mgmt-item" id="food-item-${food.id}">
-        <span class="food-cat-dot" style="background:${catColor}"></span>
-        <span class="food-mgmt-name">${food.name}</span>
-        ${isCustom ? '<span class="food-mgmt-badge custom">Özel</span>' : ''}
-        ${isOverridden ? '<span class="food-mgmt-badge edited">Düzenlendi</span>' : ''}
-        <span class="food-mgmt-portion">${food.portion}</span>
-        <div class="food-mgmt-cal-edit">
-          <input type="number" class="food-mgmt-cal-input" value="${food.calories}" min="0" max="9999"
-                 onchange="updateFoodCalorie('${food.id}', this.value, ${isCustom})"
-                 title="Kalori değerini düzenle">
-          <span class="food-mgmt-cal-unit">kcal</span>
-          ${isOverridden ? `<button class="btn btn-sm" onclick="resetFoodCalorie('${food.id}')" title="Orijinale döndür (${originalCal})">↺</button>` : ''}
-        </div>
-        <button class="food-mgmt-fav ${isFav ? 'active' : ''}" onclick="toggleMgmtFav('${food.id}')" title="Favori">★</button>
-        ${isCustom ? `<button class="food-mgmt-del" onclick="deleteFood('${food.id}')" title="Sil">🗑️</button>` : ''}
-      </div>`;
+function renderFoodList() {
+  const allFoods = getAllFoods();
+  let filteredFoods = allFoods;
+
+  if (foodMgmtFilter.category !== 'all') {
+    filteredFoods = filteredFoods.filter(food => food.category === foodMgmtFilter.category);
+  }
+
+  if (foodMgmtFilter.query) {
+    const normalizedQuery = normalizeTurkish(foodMgmtFilter.query.toLowerCase());
+    filteredFoods = filteredFoods.filter(food => normalizeTurkish(food.name.toLowerCase()).includes(normalizedQuery));
+  }
+
+  filteredFoods = [...filteredFoods].sort((a, b) => a.name.localeCompare(b.name, 'tr'));
+
+  if (DOM.foodCount) {
+    DOM.foodCount.textContent = `${filteredFoods.length} / ${allFoods.length} yemek`;
+  }
+
+  if (!filteredFoods.length) {
+    DOM.foodList.innerHTML = '<div class="food-mgmt-empty">Aramanızla eşleşen yemek bulunamadı</div>';
+    return;
+  }
+
+  const groups = {};
+  filteredFoods.forEach(food => {
+    if (!groups[food.category]) groups[food.category] = [];
+    groups[food.category].push(food);
+  });
+
+  const overrides = Storage.getCalorieOverrides();
+  let html = '';
+
+  Object.keys(FOOD_CATEGORIES).forEach(categoryKey => {
+    const foods = groups[categoryKey];
+    if (!foods || foods.length === 0) return;
+
+    const category = FOOD_CATEGORIES[categoryKey];
+    html += `<div class="food-mgmt-cat-section">
+      <div class="food-mgmt-cat-header">
+        <span class="food-mgmt-cat-icon">${category.icon}</span>
+        <span class="food-mgmt-cat-name">${escapeHtml(category.name)}</span>
+        <span class="food-mgmt-cat-count">${foods.length} yemek</span>
+      </div>
+      <div class="food-mgmt-cat-items">`;
+
+    foods.forEach(food => {
+      const isCustom = food.isCustom || isCustomFood(food.id);
+      const isOverridden = overrides[food.id] !== undefined && !isCustom;
+      const originalCalories = isOverridden ? getOriginalCalories(food.id) : null;
+      const isFavorite = Storage.isFavorite(food.id);
+      const foodIdArg = toInlineHandlerArg(food.id);
+
+      html += `
+        <div class="food-mgmt-item">
+          <div class="food-mgmt-name-col">
+            <span class="food-mgmt-name">${escapeHtml(food.name)}</span>
+            ${isCustom ? '<span class="food-mgmt-badge custom">Özel</span>' : ''}
+            ${isOverridden ? '<span class="food-mgmt-badge edited">Düzenlendi</span>' : ''}
+          </div>
+          <span class="food-mgmt-portion">${escapeHtml(food.portion)}</span>
+          <div class="food-mgmt-cal-edit">
+            <input type="number" class="food-mgmt-cal-input" value="${food.calories}" min="0" max="9999"
+                   onchange="updateFoodCalorie(${foodIdArg}, this.value, ${isCustom})"
+                   title="Kalori değerini düzenle">
+            <span class="food-mgmt-cal-unit">kcal</span>
+            ${isOverridden ? `<button class="food-mgmt-reset" onclick="resetFoodCalorie(${foodIdArg})" title="${escapeHtml(`Orijinale döndür (${originalCalories} kcal)`)}">&#8634; ${originalCalories}</button>` : ''}
+          </div>
+          <div class="food-mgmt-actions">
+            <button class="food-mgmt-fav ${isFavorite ? 'active' : ''}" onclick="toggleMgmtFav(${foodIdArg})" title="Favori">&#9733;</button>
+            ${isCustom ? `<button class="food-mgmt-del" onclick="deleteFood(${foodIdArg})" title="Sil">&#128465;</button>` : ''}
+          </div>
+        </div>`;
+    });
+
+    html += '</div></div>';
   });
 
   DOM.foodList.innerHTML = html;
 }
 
 function updateFoodCalorie(foodId, newCal, isCustom) {
-  const cal = parseInt(newCal);
-  if (isNaN(cal) || cal < 0) return;
+  const calories = Number.parseInt(newCal, 10);
+  if (Number.isNaN(calories) || calories < 0) return;
 
-  if (isCustom) {
-    Storage.updateCustomFood(foodId, { calories: cal });
-  } else {
-    Storage.setCalorieOverride(foodId, cal);
-  }
+  if (isCustom) Storage.updateCustomFood(foodId, { calories });
+  else Storage.setCalorieOverride(foodId, calories);
+
   renderFoodList();
-  // Re-render week if planner is showing
-  if (activeTab === 'planner') { renderWeek(); updateStats(); }
+  if (activeTab === 'planner') {
+    renderWeek();
+    updateStats();
+  }
   showToast('Kalori güncellendi', 'success');
 }
 
 function resetFoodCalorie(foodId) {
   Storage.removeCalorieOverride(foodId);
   renderFoodList();
-  if (activeTab === 'planner') { renderWeek(); updateStats(); }
+  if (activeTab === 'planner') {
+    renderWeek();
+    updateStats();
+  }
   showToast('Orijinal değere döndürüldü', 'info');
 }
 
 function deleteFood(foodId) {
   if (!confirm('Bu yemeği silmek istediğinize emin misiniz?')) return;
+
+  clearTimeout(saveTimeout);
   Storage.deleteCustomFood(foodId);
+  const refreshedWeek = Storage.getWeek(currentWeekId);
+  if (refreshedWeek) currentWeek = refreshedWeek;
+
   renderFoodList();
+  if (activeTab === 'planner') {
+    renderWeek();
+    updateStats();
+  }
   showToast('Yemek silindi', 'info');
 }
 
@@ -824,17 +950,24 @@ function toggleAddFoodForm() {
 
 function saveNewFood() {
   const name = document.getElementById('new-food-name')?.value?.trim();
-  const cal = parseInt(document.getElementById('new-food-cal')?.value);
-  const cat = document.getElementById('new-food-cat')?.value;
+  const calories = Number.parseInt(document.getElementById('new-food-cal')?.value, 10);
+  const category = document.getElementById('new-food-cat')?.value;
   const portion = document.getElementById('new-food-portion')?.value?.trim() || '1 porsiyon';
+  const safeCategory = FOOD_CATEGORIES[category] ? category : 'diger';
 
-  if (!name) { showToast('Yemek adı gerekli', 'error'); return; }
-  if (isNaN(cal) || cal < 0) { showToast('Geçerli bir kalori değeri girin', 'error'); return; }
+  if (!name) {
+    showToast('Yemek adı gerekli', 'error');
+    return;
+  }
 
-  Storage.addCustomFood({ name, calories: cal, category: cat, portion });
+  if (Number.isNaN(calories) || calories < 0) {
+    showToast('Geçerli bir kalori değeri girin', 'error');
+    return;
+  }
+
+  Storage.addCustomFood({ name, calories, category: safeCategory, portion });
   DOM.foodAddForm.classList.add('hidden');
 
-  // Clear form
   document.getElementById('new-food-name').value = '';
   document.getElementById('new-food-cal').value = '';
   document.getElementById('new-food-portion').value = '';
@@ -843,126 +976,173 @@ function saveNewFood() {
   showToast(`"${name}" eklendi`, 'success');
 }
 
-// ════════════════════════════════════════
-//  AUTO-FILL (Otomatik Doldur)
-// ════════════════════════════════════════
-
 function autoFillWeek() {
-  const hasFood = currentWeek.days.some(d => d.lunch.some(f => f) || d.dinner.some(f => f));
+  const hasFood = currentWeek.days.some(day => day.lunch.some(Boolean) || day.dinner.some(Boolean));
   if (hasFood && !confirm('Mevcut menünün üzerine yazılacak. Devam edilsin mi?')) return;
 
   const goal = Storage.getSettings().dailyCalorieGoal || 2000;
   const mealGoal = Math.round(goal / 2);
-  const ctx = createAutoFillContext();
+  const context = createAutoFillContext();
 
-  currentWeek.days.forEach((day) => {
-    const isWeekend = (day.dayName === 'Cumartesi' || day.dayName === 'Pazar');
-    const mTarget = isWeekend ? Math.round(mealGoal * 1.05) : mealGoal;
+  currentWeek.days.forEach(day => {
+    const isWeekend = day.dayName === 'Cumartesi' || day.dayName === 'Pazar';
+    const target = isWeekend ? Math.round(mealGoal * 1.05) : mealGoal;
 
-    const lunch = buildMeal(ctx, mTarget);
+    const lunch = buildMeal(context, target);
     day.lunch = lunch.ids;
     day.lunchPortions = lunch.portions;
 
-    const dinner = buildMeal(ctx, mTarget);
+    const dinner = buildMeal(context, target);
     day.dinner = dinner.ids;
     day.dinnerPortions = dinner.portions;
   });
 
-  autoSave(); renderWeek(); updateStats();
-  const avgDay = Math.round(calcWeekCalories() / 7);
-  showToast(`Hafta dolduruldu! Günlük ort: ${avgDay} kcal`, 'success');
+  autoSave();
+  renderWeek();
+  updateStats();
+  showToast(`Hafta dolduruldu! Günlük ort: ${Math.round(calcWeekCalories() / 7)} kcal`, 'success');
 }
 
 function autoFillDay(dayIndex) {
   const day = currentWeek.days[dayIndex];
-  const hasFood = day.lunch.some(f => f) || day.dinner.some(f => f);
+  const hasFood = day.lunch.some(Boolean) || day.dinner.some(Boolean);
   if (hasFood && !confirm(`${day.dayName} menüsünün üzerine yazılsın mı?`)) return;
 
   const goal = Storage.getSettings().dailyCalorieGoal || 2000;
   const mealGoal = Math.round(goal / 2);
-  const ctx = createAutoFillContext();
+  const context = createAutoFillContext();
 
-  // Bu haftada zaten kullanılan yemekleri used set'e ekle (tekrar önleme)
-  currentWeek.days.forEach((d, i) => {
-    if (i === dayIndex) return;
-    [...d.lunch, ...d.dinner].filter(Boolean).forEach(id => {
-      const food = getFoodById(id);
+  currentWeek.days.forEach((currentDay, index) => {
+    if (index === dayIndex) return;
+
+    [...currentDay.lunch, ...currentDay.dinner].filter(Boolean).forEach(foodId => {
+      const food = getFoodById(foodId);
       if (!food) return;
-      if (food.category === 'corba') ctx.used.corba.add(id);
-      else if (food.category === 'ana_et' || food.category === 'ana_sebze') ctx.used.anaYemek.add(id);
-      else if (food.category === 'pilav' || food.category === 'makarna' || food.category === 'borek') ctx.used.yan.add(id);
-      else ctx.used.hafif.add(id);
+
+      if (food.category === 'corba') context.used.corba.add(foodId);
+      else if (food.category === 'ana_et' || food.category === 'ana_sebze') context.used.anaYemek.add(foodId);
+      else if (food.category === 'pilav' || food.category === 'makarna' || food.category === 'borek') context.used.yan.add(foodId);
+      else context.used.hafif.add(foodId);
     });
   });
 
-  const lunch = buildMeal(ctx, mealGoal);
+  const lunch = buildMeal(context, mealGoal);
   day.lunch = lunch.ids;
   day.lunchPortions = lunch.portions;
 
-  const dinner = buildMeal(ctx, mealGoal);
+  const dinner = buildMeal(context, mealGoal);
   day.dinner = dinner.ids;
   day.dinnerPortions = dinner.portions;
 
-  autoSave(); renderWeek(); updateStats();
-  const dayCal = calcDayCalories(day);
-  showToast(`${day.dayName} dolduruldu! (${dayCal} kcal)`, 'success');
+  autoSave();
+  renderWeek();
+  updateStats();
+  showToast(`${day.dayName} dolduruldu! (${calcDayCalories(day)} kcal)`, 'success');
 }
 
 function createAutoFillContext() {
   const allFoods = getAllFoods();
   return {
     pools: {
-      corba: allFoods.filter(f => f.category === 'corba'),
-      anaYemek: allFoods.filter(f => f.category === 'ana_et' || f.category === 'ana_sebze'),
-      yan: allFoods.filter(f => f.category === 'pilav' || f.category === 'makarna' || f.category === 'borek'),
-      hafif: allFoods.filter(f => f.category === 'salata' || f.category === 'icecek' || f.category === 'meyve' || f.category === 'diger')
+      corba: allFoods.filter(food => food.category === 'corba'),
+      anaYemek: allFoods.filter(food => food.category === 'ana_et' || food.category === 'ana_sebze'),
+      yan: allFoods.filter(food => food.category === 'pilav' || food.category === 'makarna' || food.category === 'borek'),
+      hafif: allFoods.filter(food => food.category === 'salata' || food.category === 'icecek' || food.category === 'meyve' || food.category === 'diger')
     },
-    used: { corba: new Set(), anaYemek: new Set(), yan: new Set(), hafif: new Set() }
+    used: {
+      corba: new Set(),
+      anaYemek: new Set(),
+      yan: new Set(),
+      hafif: new Set()
+    }
   };
 }
 
 function pickRandom(pool, usedSet) {
-  const available = pool.filter(f => !usedSet.has(f.id));
+  const available = pool.filter(food => !usedSet.has(food.id));
   const source = available.length > 0 ? available : pool;
   if (source.length === 0) return null;
-  const pick = source[Math.floor(Math.random() * source.length)];
-  usedSet.add(pick.id);
-  return pick;
+
+  const picked = source[Math.floor(Math.random() * source.length)];
+  usedSet.add(picked.id);
+  return picked;
 }
 
-function buildMeal(ctx, targetCal) {
-  const soup = pickRandom(ctx.pools.corba, ctx.used.corba);
-  const main = pickRandom(ctx.pools.anaYemek, ctx.used.anaYemek);
-  const side = pickRandom(ctx.pools.yan, ctx.used.yan);
-  const light = pickRandom(ctx.pools.hafif, ctx.used.hafif);
+function buildMeal(context, targetCal) {
+  const soup = pickRandom(context.pools.corba, context.used.corba);
+  const main = pickRandom(context.pools.anaYemek, context.used.anaYemek);
+  const side = pickRandom(context.pools.yan, context.used.yan);
+  const light = pickRandom(context.pools.hafif, context.used.hafif);
 
   const items = [soup, main, side, light];
-  const ids = items.map(f => f?.id || null);
+  const ids = items.map(item => item?.id || null);
   const portions = [1, 1, 1, 1];
 
-  const totalCal = items.reduce((s, f) => s + (f?.calories || 0), 0);
-  if (totalCal > targetCal * 1.3 && main) {
-    portions[1] = 0.5;
-  } else if (totalCal < targetCal * 0.6 && main) {
-    portions[1] = 1.5;
-  }
+  const totalCal = items.reduce((sum, item) => sum + (item?.calories || 0), 0);
+  if (totalCal > targetCal * 1.3 && main) portions[1] = 0.5;
+  else if (totalCal < targetCal * 0.6 && main) portions[1] = 1.5;
 
   return { ids, portions };
 }
 
-// ─── Utilities ──────────────────────────
+function persistCurrentWeek() {
+  if (!currentWeekId || !currentWeek) return false;
+  clearTimeout(saveTimeout);
+  saveTimeout = null;
+  return Storage.saveWeek(currentWeekId, currentWeek);
+}
+
+function escapeHtml(value) {
+  return String(value ?? '')
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
+}
+
+function toInlineHandlerArg(value) {
+  return escapeHtml(JSON.stringify(String(value ?? '')));
+}
+
+function sanitizeExcelText(value) {
+  const text = String(value ?? '');
+  const guarded = /^[=+\-@]/.test(text) ? `'${text}` : text;
+  return escapeHtml(guarded);
+}
+
+function downloadBlob(blob, filename) {
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement('a');
+  link.href = url;
+  link.download = filename;
+  link.style.display = 'none';
+  document.body.appendChild(link);
+  link.click();
+  link.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
+}
+
 function formatDate(dateStr) {
   const months = ['Ocak', 'Şubat', 'Mart', 'Nisan', 'Mayıs', 'Haziran',
     'Temmuz', 'Ağustos', 'Eylül', 'Ekim', 'Kasım', 'Aralık'];
-  const d = new Date(dateStr + 'T00:00:00');
-  return `${d.getDate()} ${months[d.getMonth()]} ${d.getFullYear()}`;
+  const date = new Date(`${dateStr}T00:00:00`);
+  if (Number.isNaN(date.getTime())) return String(dateStr || '');
+  return `${date.getDate()} ${months[date.getMonth()]} ${date.getFullYear()}`;
 }
 
 function showToast(message, type = 'info') {
   const icons = { success: '✅', error: '❌', info: 'ℹ️' };
   const toast = document.createElement('div');
   toast.className = `toast ${type}`;
-  toast.innerHTML = `<span>${icons[type] || ''}</span> ${message}`;
+
+  const icon = document.createElement('span');
+  icon.textContent = icons[type] || '';
+  toast.appendChild(icon);
+  toast.appendChild(document.createTextNode(` ${message}`));
+
   DOM.toastContainer.appendChild(toast);
-  setTimeout(() => { if (toast.parentNode) toast.remove(); }, 3000);
+  setTimeout(() => {
+    if (toast.parentNode) toast.remove();
+  }, 3000);
 }
