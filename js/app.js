@@ -634,6 +634,512 @@ function exportCurrentWeek() {
 
 function exportExcel() {
   persistCurrentWeek();
+  {
+    const xlsx = window.XLSX;
+    if (!xlsx?.utils?.book_new || typeof xlsx.writeFile !== 'function') {
+      showToast('Excel disa aktarma modulu yuklenemedi', 'error');
+      return;
+    }
+
+    const exportGoal = Storage.getSettings().dailyCalorieGoal || 2000;
+    const weekLabel = sanitizeExcelText(currentWeek.label || currentWeekId);
+    const exportedAt = new Date().toLocaleString('tr-TR');
+    const workbook = xlsx.utils.book_new();
+    workbook.Props = {
+      Title: 'Haftalik Yemek Menusu',
+      Subject: weekLabel,
+      Author: 'Kalori Hesapla'
+    };
+
+    const palette = {
+      inkDark: '332A1D',
+      inkSoft: '6F5C48',
+      cream: 'FCF6EE',
+      creamAlt: 'F6EEE4',
+      line: 'DCCDBE',
+      accent: 'D97016',
+      accentDark: 'B85C0A',
+      accentSoft: 'F7E2CE',
+      okBg: 'EAF6EC',
+      okText: '1F7A39',
+      warnBg: 'FFF2DF',
+      warnText: 'C46A00',
+      overBg: 'FBE8E7',
+      overText: 'B3332E',
+      white: 'FFFFFF'
+    };
+
+    const baseBorder = {
+      top: { style: 'thin', color: { rgb: palette.line } },
+      bottom: { style: 'thin', color: { rgb: palette.line } },
+      left: { style: 'thin', color: { rgb: palette.line } },
+      right: { style: 'thin', color: { rgb: palette.line } }
+    };
+
+    const styles = {
+      title: {
+        font: { name: 'Calibri', sz: 16, bold: true, color: { rgb: palette.white } },
+        fill: { patternType: 'solid', fgColor: { rgb: palette.accent } },
+        alignment: { horizontal: 'center', vertical: 'center' }
+      },
+      subtitle: {
+        font: { name: 'Calibri', sz: 10, color: { rgb: palette.inkSoft } },
+        fill: { patternType: 'solid', fgColor: { rgb: palette.creamAlt } },
+        alignment: { horizontal: 'center', vertical: 'center' }
+      },
+      spacer: {
+        fill: { patternType: 'solid', fgColor: { rgb: palette.white } }
+      },
+      metricLabel: {
+        font: { name: 'Calibri', sz: 10, bold: true, color: { rgb: palette.inkDark } },
+        fill: { patternType: 'solid', fgColor: { rgb: palette.accentSoft } },
+        alignment: { horizontal: 'left', vertical: 'center' },
+        border: baseBorder
+      },
+      metricValue: {
+        font: { name: 'Calibri', sz: 11, bold: true, color: { rgb: palette.accentDark } },
+        fill: { patternType: 'solid', fgColor: { rgb: palette.white } },
+        alignment: { horizontal: 'center', vertical: 'center' },
+        border: baseBorder,
+        numFmt: '0 "kcal"'
+      },
+      note: {
+        font: { name: 'Calibri', sz: 9, italic: true, color: { rgb: palette.inkSoft } },
+        fill: { patternType: 'solid', fgColor: { rgb: palette.creamAlt } },
+        alignment: { horizontal: 'left', vertical: 'center' },
+        border: baseBorder
+      },
+      header: {
+        font: { name: 'Calibri', sz: 10, bold: true, color: { rgb: palette.white } },
+        fill: { patternType: 'solid', fgColor: { rgb: palette.inkDark } },
+        alignment: { horizontal: 'center', vertical: 'center', wrapText: true },
+        border: baseBorder
+      },
+      dayCell: {
+        font: { name: 'Calibri', sz: 11, bold: true, color: { rgb: palette.accentDark } },
+        fill: { patternType: 'solid', fgColor: { rgb: palette.accentSoft } },
+        alignment: { horizontal: 'center', vertical: 'center' },
+        border: baseBorder
+      },
+      dateCell: {
+        font: { name: 'Calibri', sz: 10, color: { rgb: palette.inkDark } },
+        fill: { patternType: 'solid', fgColor: { rgb: palette.creamAlt } },
+        alignment: { horizontal: 'center', vertical: 'center' },
+        border: baseBorder
+      },
+      menuText: {
+        font: { name: 'Calibri', sz: 10, color: { rgb: palette.inkDark } },
+        fill: { patternType: 'solid', fgColor: { rgb: palette.white } },
+        alignment: { horizontal: 'left', vertical: 'top', wrapText: true },
+        border: baseBorder
+      },
+      kcal: {
+        font: { name: 'Calibri', sz: 10, bold: true, color: { rgb: palette.accentDark } },
+        fill: { patternType: 'solid', fgColor: { rgb: palette.white } },
+        alignment: { horizontal: 'center', vertical: 'center' },
+        border: baseBorder,
+        numFmt: '0 "kcal"'
+      },
+      dayTotal: {
+        font: { name: 'Calibri', sz: 11, bold: true, color: { rgb: palette.accentDark } },
+        fill: { patternType: 'solid', fgColor: { rgb: palette.cream } },
+        alignment: { horizontal: 'center', vertical: 'center' },
+        border: baseBorder,
+        numFmt: '0 "kcal"'
+      },
+      goalPct: {
+        font: { name: 'Calibri', sz: 10, bold: true, color: { rgb: palette.inkDark } },
+        alignment: { horizontal: 'center', vertical: 'center' },
+        border: baseBorder,
+        numFmt: '0%'
+      },
+      status: {
+        font: { name: 'Calibri', sz: 10, bold: true, color: { rgb: palette.inkDark } },
+        alignment: { horizontal: 'center', vertical: 'center' },
+        border: baseBorder
+      },
+      detailDay: {
+        font: { name: 'Calibri', sz: 10, bold: true, color: { rgb: palette.white } },
+        fill: { patternType: 'solid', fgColor: { rgb: palette.accent } },
+        alignment: { horizontal: 'center', vertical: 'center' },
+        border: baseBorder
+      },
+      detailMeal: {
+        font: { name: 'Calibri', sz: 10, bold: true, color: { rgb: palette.inkDark } },
+        fill: { patternType: 'solid', fgColor: { rgb: palette.creamAlt } },
+        alignment: { horizontal: 'center', vertical: 'center' },
+        border: baseBorder
+      },
+      detailFood: {
+        font: { name: 'Calibri', sz: 10, color: { rgb: palette.inkDark } },
+        fill: { patternType: 'solid', fgColor: { rgb: palette.white } },
+        alignment: { horizontal: 'left', vertical: 'center', wrapText: true },
+        border: baseBorder
+      },
+      detailTotalLabel: {
+        font: { name: 'Calibri', sz: 10, bold: true, color: { rgb: palette.inkDark } },
+        fill: { patternType: 'solid', fgColor: { rgb: palette.cream } },
+        alignment: { horizontal: 'right', vertical: 'center' },
+        border: baseBorder
+      },
+      detailTotalValue: {
+        font: { name: 'Calibri', sz: 10, bold: true, color: { rgb: palette.accentDark } },
+        fill: { patternType: 'solid', fgColor: { rgb: palette.cream } },
+        alignment: { horizontal: 'center', vertical: 'center' },
+        border: baseBorder,
+        numFmt: '0 "kcal"'
+      }
+    };
+
+    function cell(value, style, type) {
+      const cellType = type || (typeof value === 'number' ? 'n' : 's');
+      return { v: value, t: cellType, s: style };
+    }
+
+    function blank(style = styles.spacer) {
+      return cell('', style, 's');
+    }
+
+    function formatPortion(portion) {
+      const numericPortion = Number(portion || 1);
+      return Number.isInteger(numericPortion)
+        ? String(numericPortion)
+        : String(numericPortion).replace('.', ',');
+    }
+
+    function getMealItems(foodIds, portions) {
+      return [0, 1, 2, 3]
+        .map(index => {
+          const foodId = foodIds?.[index];
+          const food = foodId ? getFoodById(foodId) : null;
+          if (!food) return null;
+
+          const portion = Number(portions?.[index] ?? 1);
+          return {
+            name: sanitizeExcelText(food.name),
+            calories: Math.round(food.calories * portion),
+            portion
+          };
+        })
+        .filter(Boolean);
+    }
+
+    function describeMeal(items) {
+      if (!items.length) return '-';
+      return items
+        .map((item, index) => `${index + 1}. ${item.name}${item.portion !== 1 ? ` (${formatPortion(item.portion)}x)` : ''}`)
+        .join('\n');
+    }
+
+    function getStatusMeta(ratio) {
+      if (ratio > 1) {
+        return {
+          label: 'Hedef ustu',
+          pctStyle: {
+            ...styles.goalPct,
+            fill: { patternType: 'solid', fgColor: { rgb: palette.overBg } },
+            font: { name: 'Calibri', sz: 10, bold: true, color: { rgb: palette.overText } }
+          },
+          statusStyle: {
+            ...styles.status,
+            fill: { patternType: 'solid', fgColor: { rgb: palette.overBg } },
+            font: { name: 'Calibri', sz: 10, bold: true, color: { rgb: palette.overText } }
+          }
+        };
+      }
+
+      if (ratio >= 0.85) {
+        return {
+          label: 'Dengeli',
+          pctStyle: {
+            ...styles.goalPct,
+            fill: { patternType: 'solid', fgColor: { rgb: palette.warnBg } },
+            font: { name: 'Calibri', sz: 10, bold: true, color: { rgb: palette.warnText } }
+          },
+          statusStyle: {
+            ...styles.status,
+            fill: { patternType: 'solid', fgColor: { rgb: palette.warnBg } },
+            font: { name: 'Calibri', sz: 10, bold: true, color: { rgb: palette.warnText } }
+          }
+        };
+      }
+
+      return {
+        label: 'Dusuk',
+        pctStyle: {
+          ...styles.goalPct,
+          fill: { patternType: 'solid', fgColor: { rgb: palette.okBg } },
+          font: { name: 'Calibri', sz: 10, bold: true, color: { rgb: palette.okText } }
+        },
+        statusStyle: {
+          ...styles.status,
+          fill: { patternType: 'solid', fgColor: { rgb: palette.okBg } },
+          font: { name: 'Calibri', sz: 10, bold: true, color: { rgb: palette.okText } }
+        }
+      };
+    }
+
+    const dayExports = currentWeek.days.map((day, dayIndex) => {
+      const lunchItems = getMealItems(day.lunch || [], day.lunchPortions || [1, 1, 1, 1]);
+      const dinnerItems = getMealItems(day.dinner || [], day.dinnerPortions || [1, 1, 1, 1]);
+      const lunchCal = lunchItems.reduce((sum, item) => sum + item.calories, 0);
+      const dinnerCal = dinnerItems.reduce((sum, item) => sum + item.calories, 0);
+      const dayTotal = lunchCal + dinnerCal;
+      const ratio = exportGoal > 0 ? dayTotal / exportGoal : 0;
+
+      return {
+        day,
+        dayIndex,
+        lunchItems,
+        dinnerItems,
+        lunchCal,
+        dinnerCal,
+        dayTotal,
+        ratio,
+        statusMeta: getStatusMeta(ratio)
+      };
+    });
+
+    const weekTotal = dayExports.reduce((sum, entry) => sum + entry.dayTotal, 0);
+    const daysWithFood = dayExports.filter(entry => entry.dayTotal > 0).length;
+    const avgDaily = Math.round(weekTotal / 7);
+    const activeAvg = daysWithFood > 0 ? Math.round(weekTotal / daysWithFood) : 0;
+
+    const planRows = [
+      [
+        cell('HAFTALIK YEMEK MENUSU', styles.title),
+        blank(styles.title),
+        blank(styles.title),
+        blank(styles.title),
+        blank(styles.title),
+        blank(styles.title),
+        blank(styles.title),
+        blank(styles.title),
+        blank(styles.title)
+      ],
+      [
+        cell(`${weekLabel} · Gunluk hedef: ${exportGoal} kcal · Olusturma: ${exportedAt}`, styles.subtitle),
+        blank(styles.subtitle),
+        blank(styles.subtitle),
+        blank(styles.subtitle),
+        blank(styles.subtitle),
+        blank(styles.subtitle),
+        blank(styles.subtitle),
+        blank(styles.subtitle),
+        blank(styles.subtitle)
+      ],
+      Array.from({ length: 9 }, () => blank()),
+      [
+        cell('Haftalik toplam', styles.metricLabel),
+        cell(weekTotal, styles.metricValue),
+        cell('Gunluk ortalama', styles.metricLabel),
+        cell(avgDaily, styles.metricValue),
+        cell('Aktif gun ort.', styles.metricLabel),
+        cell(activeAvg, styles.metricValue),
+        cell('Gunluk hedef', styles.metricLabel),
+        cell(exportGoal, styles.metricValue),
+        cell(`Aktif gun: ${daysWithFood}/7`, styles.note)
+      ],
+      [
+        cell('Not', styles.note),
+        cell('Dengeli = hedefin %85 ile %100 arasi', styles.note),
+        blank(styles.note),
+        blank(styles.note),
+        blank(styles.note),
+        blank(styles.note),
+        blank(styles.note),
+        blank(styles.note),
+        blank(styles.note)
+      ]
+    ];
+
+    const planHeaderRowIndex = planRows.length;
+    planRows.push([
+      cell('Gun', styles.header),
+      cell('Tarih', styles.header),
+      cell('Ogle menusu', styles.header),
+      cell('Ogle kcal', styles.header),
+      cell('Aksam menusu', styles.header),
+      cell('Aksam kcal', styles.header),
+      cell('Gunluk toplam', styles.header),
+      cell('Hedef %', styles.header),
+      cell('Durum', styles.header)
+    ]);
+
+    const detailRows = [
+      [
+        cell('YEMEK DETAYLARI', styles.title),
+        blank(styles.title),
+        blank(styles.title),
+        blank(styles.title),
+        blank(styles.title),
+        blank(styles.title),
+        blank(styles.title),
+        blank(styles.title),
+        blank(styles.title),
+        blank(styles.title),
+        blank(styles.title),
+        blank(styles.title)
+      ],
+      [
+        cell(`${weekLabel} · Her ogun tek satirda listelenmistir`, styles.subtitle),
+        blank(styles.subtitle),
+        blank(styles.subtitle),
+        blank(styles.subtitle),
+        blank(styles.subtitle),
+        blank(styles.subtitle),
+        blank(styles.subtitle),
+        blank(styles.subtitle),
+        blank(styles.subtitle),
+        blank(styles.subtitle),
+        blank(styles.subtitle),
+        blank(styles.subtitle)
+      ],
+      Array.from({ length: 12 }, () => blank()),
+      [
+        cell('Gun', styles.header),
+        cell('Tarih', styles.header),
+        cell('Ogun', styles.header),
+        cell('1. Yemek', styles.header),
+        cell('kcal', styles.header),
+        cell('2. Yemek', styles.header),
+        cell('kcal', styles.header),
+        cell('3. Yemek', styles.header),
+        cell('kcal', styles.header),
+        cell('4. Yemek', styles.header),
+        cell('kcal', styles.header),
+        cell('Ogun toplami', styles.header)
+      ]
+    ];
+
+    const detailMerges = [
+      { s: { r: 0, c: 0 }, e: { r: 0, c: 11 } },
+      { s: { r: 1, c: 0 }, e: { r: 1, c: 11 } }
+    ];
+
+    dayExports.forEach(entry => {
+      const altFill = entry.dayIndex % 2 === 0 ? palette.white : palette.creamAlt;
+      const planTextStyle = { ...styles.menuText, fill: { patternType: 'solid', fgColor: { rgb: altFill } } };
+      const planKcalStyle = { ...styles.kcal, fill: { patternType: 'solid', fgColor: { rgb: altFill } } };
+
+      planRows.push([
+        cell(sanitizeExcelText(entry.day.dayName), styles.dayCell),
+        cell(formatDate(entry.day.date), styles.dateCell),
+        cell(describeMeal(entry.lunchItems), planTextStyle),
+        cell(entry.lunchCal, planKcalStyle),
+        cell(describeMeal(entry.dinnerItems), planTextStyle),
+        cell(entry.dinnerCal, planKcalStyle),
+        cell(entry.dayTotal, styles.dayTotal),
+        cell(entry.ratio, entry.statusMeta.pctStyle),
+        cell(entry.statusMeta.label, entry.statusMeta.statusStyle)
+      ]);
+
+      const lunchRow = [
+        cell(sanitizeExcelText(entry.day.dayName), styles.detailDay),
+        cell(formatDate(entry.day.date), styles.dateCell),
+        cell('Ogle', styles.detailMeal)
+      ];
+      const dinnerRow = [
+        cell(sanitizeExcelText(entry.day.dayName), styles.detailDay),
+        cell(formatDate(entry.day.date), styles.dateCell),
+        cell('Aksam', styles.detailMeal)
+      ];
+
+      [0, 1, 2, 3].forEach(index => {
+        const lunchItem = entry.lunchItems[index];
+        lunchRow.push(cell(lunchItem ? `${lunchItem.name}${lunchItem.portion !== 1 ? ` (${formatPortion(lunchItem.portion)}x)` : ''}` : '-', styles.detailFood));
+        lunchRow.push(cell(lunchItem ? lunchItem.calories : 0, styles.kcal));
+
+        const dinnerItem = entry.dinnerItems[index];
+        dinnerRow.push(cell(dinnerItem ? `${dinnerItem.name}${dinnerItem.portion !== 1 ? ` (${formatPortion(dinnerItem.portion)}x)` : ''}` : '-', styles.detailFood));
+        dinnerRow.push(cell(dinnerItem ? dinnerItem.calories : 0, styles.kcal));
+      });
+
+      lunchRow.push(cell(entry.lunchCal, styles.detailTotalValue));
+      dinnerRow.push(cell(entry.dinnerCal, styles.detailTotalValue));
+
+      const totalRowIndex = detailRows.length + 2;
+      detailRows.push(
+        lunchRow,
+        dinnerRow,
+        [
+          cell(`${sanitizeExcelText(entry.day.dayName)} toplam`, styles.detailTotalLabel),
+          blank(styles.detailTotalLabel),
+          blank(styles.detailTotalLabel),
+          blank(styles.detailTotalLabel),
+          blank(styles.detailTotalLabel),
+          blank(styles.detailTotalLabel),
+          blank(styles.detailTotalLabel),
+          blank(styles.detailTotalLabel),
+          blank(styles.detailTotalLabel),
+          blank(styles.detailTotalLabel),
+          blank(styles.detailTotalLabel),
+          cell(entry.dayTotal, styles.dayTotal)
+        ]
+      );
+      detailMerges.push({ s: { r: totalRowIndex, c: 0 }, e: { r: totalRowIndex, c: 10 } });
+    });
+
+    const planSheet = xlsx.utils.aoa_to_sheet(planRows);
+    planSheet['!cols'] = [
+      { wch: 12 },
+      { wch: 14 },
+      { wch: 38 },
+      { wch: 11 },
+      { wch: 38 },
+      { wch: 11 },
+      { wch: 14 },
+      { wch: 10 },
+      { wch: 14 }
+    ];
+    planSheet['!rows'] = planRows.map((row, index) => {
+      if (index === 0) return { hpt: 24 };
+      if (index === 1) return { hpt: 20 };
+      if (index === planHeaderRowIndex) return { hpt: 24 };
+      if (index > planHeaderRowIndex) return { hpt: 56 };
+      return { hpt: 22 };
+    });
+    planSheet['!merges'] = [
+      { s: { r: 0, c: 0 }, e: { r: 0, c: 8 } },
+      { s: { r: 1, c: 0 }, e: { r: 1, c: 8 } }
+    ];
+    planSheet['!autofilter'] = {
+      ref: xlsx.utils.encode_range({ s: { r: planHeaderRowIndex, c: 0 }, e: { r: planRows.length - 1, c: 8 } })
+    };
+
+    const detailSheet = xlsx.utils.aoa_to_sheet(detailRows);
+    detailSheet['!cols'] = [
+      { wch: 12 },
+      { wch: 14 },
+      { wch: 10 },
+      { wch: 24 },
+      { wch: 9 },
+      { wch: 24 },
+      { wch: 9 },
+      { wch: 24 },
+      { wch: 9 },
+      { wch: 24 },
+      { wch: 9 },
+      { wch: 13 }
+    ];
+    detailSheet['!rows'] = detailRows.map((row, index) => {
+      if (index === 0) return { hpt: 24 };
+      if (index === 1) return { hpt: 20 };
+      if (index === 3) return { hpt: 24 };
+      if (row[2]?.v === 'Ogle' || row[2]?.v === 'Aksam') return { hpt: 28 };
+      return { hpt: 22 };
+    });
+    detailSheet['!merges'] = detailMerges;
+    detailSheet['!autofilter'] = {
+      ref: xlsx.utils.encode_range({ s: { r: 3, c: 0 }, e: { r: detailRows.length - 1, c: 11 } })
+    };
+
+    xlsx.utils.book_append_sheet(workbook, planSheet, 'Plan');
+    xlsx.utils.book_append_sheet(workbook, detailSheet, 'Detay');
+    xlsx.writeFile(workbook, `menu_${currentWeek.startDate}.xlsx`, { bookType: 'xlsx', compression: true });
+    showToast('Excel olarak indirildi', 'success');
+    return;
+  }
   const goal = Storage.getSettings().dailyCalorieGoal || 2000;
   const BOM = '\uFEFF';
 
@@ -1106,9 +1612,10 @@ function toInlineHandlerArg(value) {
 }
 
 function sanitizeExcelText(value) {
-  const text = String(value ?? '');
-  const guarded = /^[=+\-@]/.test(text) ? `'${text}` : text;
-  return escapeHtml(guarded);
+  return String(value ?? '')
+    .replace(/\r\n?/g, '\n')
+    .replace(/\t/g, '    ')
+    .replace(/[\u0000-\u0008\u000B\u000C\u000E-\u001F]/g, ' ');
 }
 
 function downloadBlob(blob, filename) {
