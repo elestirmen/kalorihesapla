@@ -212,12 +212,13 @@ const BASE_FOODS = [
 
 function getAllFoods() {
   const customFoods = Storage.getCustomFoods();
-  const overrides = Storage.getCalorieOverrides();
+  const calorieOverrides = Storage.getCalorieOverrides();
+  const allergenOverrides = Storage.getAllergenOverrides();
   const merged = [...BASE_FOODS, ...customFoods].map(f => {
-    if (overrides[f.id] !== undefined) {
-      return { ...f, calories: overrides[f.id] };
-    }
-    return f;
+    const food = calorieOverrides[f.id] !== undefined
+      ? { ...f, calories: calorieOverrides[f.id] }
+      : f;
+    return { ...food, allergenInfo: getFoodAllergenInfo(food, allergenOverrides) };
   });
   return merged;
 }
@@ -237,7 +238,10 @@ function searchFoods(query) {
   const foods = getAllFoods();
   return foods.filter(food => {
     const normalizedName = normalizeTurkish(food.name.toLowerCase());
-    return words.every(word => normalizedName.includes(word));
+    const normalizedAllergenText = normalizeTurkish(
+      formatAllergenInfo(food.allergenInfo, { separator: ' ' }).toLowerCase()
+    );
+    return words.every(word => normalizedName.includes(word) || normalizedAllergenText.includes(word));
   }).sort((a, b) => {
     const aStarts = normalizeTurkish(a.name.toLowerCase()).startsWith(normalizedQuery);
     const bStarts = normalizeTurkish(b.name.toLowerCase()).startsWith(normalizedQuery);

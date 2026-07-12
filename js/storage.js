@@ -8,6 +8,7 @@ const SETTINGS_KEY = 'kalori_ayarlar';
 const CUSTOM_FOODS_KEY = 'kalori_custom_foods';
 const FAVORITES_KEY = 'kalori_favorites';
 const CALORIE_OVERRIDES_KEY = 'kalori_calorie_overrides';
+const ALLERGEN_OVERRIDES_KEY = 'kalori_allergen_overrides';
 const WEEK_ID_PATTERN = /^\d{4}-W\d{2}$/;
 const DATE_ONLY_PATTERN = /^\d{4}-\d{2}-\d{2}$/;
 const WEEK_DAY_COUNT = 7;
@@ -78,19 +79,17 @@ const Storage = {
   saveSettings(settings) {
     try {
       const current = this.getSettings();
-      localStorage.setItem(SETTINGS_KEY, JSON.stringify({ ...current, ...settings }));
+      const updates = settings && typeof settings === 'object' ? settings : {};
+      localStorage.setItem(SETTINGS_KEY, JSON.stringify(normalizeSettings({ ...current, ...updates })));
     } catch {}
   },
 
   getSettings() {
     try {
       const settings = JSON.parse(localStorage.getItem(SETTINGS_KEY)) || {};
-      return {
-        lastWeekId: WEEK_ID_PATTERN.test(getTrimmedString(settings.lastWeekId)) ? settings.lastWeekId : null,
-        dailyCalorieGoal: normalizeInteger(settings.dailyCalorieGoal, 500, 5000, 2000)
-      };
+      return normalizeSettings(settings);
     } catch {
-      return { lastWeekId: null, dailyCalorieGoal: 2000 };
+      return normalizeSettings({});
     }
   },
 
@@ -183,6 +182,39 @@ const Storage = {
     return Object.keys(normalizedOverrides).length;
   },
 
+  // Built-in food allergen profile overrides
+  getAllergenOverrides() {
+    try { return normalizeAllergenOverrides(JSON.parse(localStorage.getItem(ALLERGEN_OVERRIDES_KEY)) || {}); }
+    catch { return {}; }
+  },
+
+  setAllergenOverride(foodId, allergenInfo) {
+    const normalizedId = getTrimmedString(foodId);
+    if (!isBuiltInFoodId(normalizedId)) return false;
+
+    const overrides = this.getAllergenOverrides();
+    overrides[normalizedId] = normalizeAllergenInfo(allergenInfo);
+    localStorage.setItem(ALLERGEN_OVERRIDES_KEY, JSON.stringify(overrides));
+    return true;
+  },
+
+  removeAllergenOverride(foodId) {
+    const normalizedId = getTrimmedString(foodId);
+    if (!normalizedId) return false;
+
+    const overrides = this.getAllergenOverrides();
+    delete overrides[normalizedId];
+    localStorage.setItem(ALLERGEN_OVERRIDES_KEY, JSON.stringify(overrides));
+    return true;
+  },
+
+  mergeAllergenOverrides(incomingOverrides) {
+    const normalizedOverrides = normalizeAllergenOverrides(incomingOverrides);
+    const overrides = { ...this.getAllergenOverrides(), ...normalizedOverrides };
+    localStorage.setItem(ALLERGEN_OVERRIDES_KEY, JSON.stringify(overrides));
+    return Object.keys(normalizedOverrides).length;
+  },
+
   // Favorites
   getFavorites() {
     try { return normalizeFavoriteIds(JSON.parse(localStorage.getItem(FAVORITES_KEY)) || []); }
@@ -223,19 +255,24 @@ const Storage = {
     const referencedFoodIds = collectReferencedFoodIds(week);
     const customFoods = this.getCustomFoods().filter(food => referencedFoodIds.has(food.id));
     const calorieOverrides = {};
+    const allergenOverrides = {};
 
     Object.entries(this.getCalorieOverrides()).forEach(([foodId, calories]) => {
       if (referencedFoodIds.has(foodId)) calorieOverrides[foodId] = calories;
     });
+    Object.entries(this.getAllergenOverrides()).forEach(([foodId, allergenInfo]) => {
+      if (referencedFoodIds.has(foodId)) allergenOverrides[foodId] = allergenInfo;
+    });
 
     return JSON.stringify({
-      version: 2,
+      version: 3,
       exportedAt: new Date().toISOString(),
       weekId,
       week,
       dependencies: {
         customFoods,
-        calorieOverrides
+        calorieOverrides,
+        allergenOverrides
       }
     }, null, 2);
   },
@@ -247,6 +284,7 @@ const Storage = {
 
       const importedCustomFoods = this.mergeCustomFoods(imported.dependencies.customFoods);
       const importedOverrides = this.mergeCalorieOverrides(imported.dependencies.calorieOverrides);
+      const importedAllergenOverrides = this.mergeAllergenOverrides(imported.dependencies.allergenOverrides);
       const saved = this.saveWeek(imported.weekId, imported.week);
       if (!saved) throw new Error('Hafta kaydedilemedi');
 
@@ -254,7 +292,8 @@ const Storage = {
         success: true,
         weekId: imported.weekId,
         importedCustomFoods,
-        importedOverrides
+        importedOverrides,
+        importedAllergenOverrides
       };
     } catch (error) {
       return { success: false, error: error.message };
@@ -313,6 +352,16 @@ function normalizeInteger(value, min, max, fallback) {
   const num = Number.parseInt(value, 10);
   if (!Number.isFinite(num)) return fallback;
   return Math.min(max, Math.max(min, num));
+}
+
+function normalizeSettings(settings) {
+  const source = settings && typeof settings === 'object' && !Array.isArray(settings) ? settings : {};
+  const allergenPreferences = normalizeAllergenPreferences(source);
+  return {
+    lastWeekId: WEEK_ID_PATTERN.test(getTrimmedString(source.lastWeekId)) ? source.lastWeekId : null,
+    dailyCalorieGoal: normalizeInteger(source.dailyCalorieGoal, 500, 5000, 2000),
+    ...allergenPreferences
+  };
 }
 
 function normalizeDateOnly(value) {
@@ -427,6 +476,7 @@ function normalizeCustomFood(food) {
     category,
     calories,
     portion: getTrimmedString(food.portion) || '1 porsiyon',
+    allergenInfo: normalizeAllergenInfo(food.allergenInfo),
     isCustom: true
   };
 }
@@ -451,6 +501,22 @@ function normalizeCalorieOverrides(overrides) {
     const id = getTrimmedString(foodId);
     const normalizedCalories = normalizeInteger(calories, 0, 9999, null);
     if (id && normalizedCalories !== null) acc[id] = normalizedCalories;
+    return acc;
+  }, {});
+}
+
+function isBuiltInFoodId(foodId) {
+  return typeof BASE_FOODS !== 'undefined'
+    && Array.isArray(BASE_FOODS)
+    && BASE_FOODS.some(food => food.id === foodId);
+}
+
+function normalizeAllergenOverrides(overrides) {
+  if (!overrides || typeof overrides !== 'object' || Array.isArray(overrides)) return {};
+
+  return Object.entries(overrides).reduce((acc, [foodId, allergenInfo]) => {
+    const id = getTrimmedString(foodId);
+    if (isBuiltInFoodId(id)) acc[id] = normalizeAllergenInfo(allergenInfo);
     return acc;
   }, {});
 }
@@ -492,7 +558,8 @@ function normalizeImportPayload(payload) {
     week = legacyPayload;
     dependencies = {
       customFoods: payload.customFoods,
-      calorieOverrides: payload.calorieOverrides
+      calorieOverrides: payload.calorieOverrides,
+      allergenOverrides: payload.allergenOverrides
     };
   }
 
@@ -510,7 +577,8 @@ function normalizeImportPayload(payload) {
     week: normalizedWeek,
     dependencies: {
       customFoods: normalizeCustomFoodList(dependencies?.customFoods),
-      calorieOverrides: normalizeCalorieOverrides(dependencies?.calorieOverrides)
+      calorieOverrides: normalizeCalorieOverrides(dependencies?.calorieOverrides),
+      allergenOverrides: normalizeAllergenOverrides(dependencies?.allergenOverrides)
     }
   };
 }

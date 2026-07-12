@@ -19,8 +19,8 @@
           <h1>Kalori Hesapla</h1>
         </div>
         <nav class="tab-nav">
-          <button class="tab-btn active" data-tab="planner">📋 Menü Planlama</button>
-          <button class="tab-btn" data-tab="foods">🍽️ Yemek Yönetimi</button>
+          <button class="tab-btn active" data-tab="planner">📋 Haftalık Menü</button>
+          <button class="tab-btn" data-tab="foods">🍽️ Yemekler ve Kaloriler</button>
         </nav>
       </div>
 
@@ -31,8 +31,11 @@
           <button class="week-nav-btn" id="btn-next-week" title="Sonraki hafta">▶</button>
           <input type="date" class="week-date-input" id="week-date-input" title="Tarih seç">
         </div>
-        <div class="header-controls">
+        <div class="header-controls" id="planner-actions">
           <button class="btn btn-primary" id="btn-auto-fill" title="Haftalık menüyü otomatik doldur"><span>🎲</span> Otomatik Doldur</button>
+          <button type="button" class="btn btn-export-excel" id="btn-export-excel" title="Haftalık menüyü Excel dosyası olarak indir">
+            <span aria-hidden="true">📊</span><span>Excel'e Aktar</span>
+          </button>
           <button class="btn btn-danger" id="btn-clear-week" title="Haftadaki eklenmiş yemekleri temizle"><span>🧹</span> Temizle</button>
           <button class="btn btn-primary" id="btn-new-week"><span>➕</span> Yeni Hafta</button>
           <div class="saved-weeks-wrapper" style="position:relative;">
@@ -42,10 +45,14 @@
               <div id="weeks-list"></div>
             </div>
           </div>
-          <button class="btn" id="btn-export-excel" title="Excel (.xlsx) olarak indir">Excel (.xlsx)</button>
-          <button class="btn" id="btn-export" title="JSON olarak dışa aktar">Dışa Aktar</button>
-          <button class="btn" id="btn-import" title="JSON dosyası içe aktar">İçe Aktar</button>
-          <button class="btn" id="btn-print" title="Yazdırma görünümü">Yazdır</button>
+          <details class="header-more">
+            <summary class="btn" title="Dışa aktarma ve yazdırma işlemleri">Diğer İşlemler</summary>
+            <div class="header-more-menu">
+              <button class="btn" id="btn-export" title="JSON olarak dışa aktar">JSON Dışa Aktar</button>
+              <button class="btn" id="btn-import" title="JSON dosyası içe aktar">JSON İçe Aktar</button>
+              <button class="btn" id="btn-print" title="Yazdırma görünümü">Yazdır</button>
+            </div>
+          </details>
         </div>
       </div>
     </div>
@@ -83,6 +90,41 @@
       </div>
     </section>
 
+    <details class="allergen-settings">
+      <summary class="allergen-settings-summary">
+        <span class="allergen-settings-summary-title">⚠ Alerjen kısıtları</span>
+        <span class="allergen-settings-summary-value" id="allergen-settings-summary-value">Alerjen seçilmedi</span>
+      </summary>
+      <div class="allergen-settings-content" aria-labelledby="allergen-settings-title">
+        <div class="allergen-settings-heading">
+          <div>
+            <h2 id="allergen-settings-title">Kaçınılan alerjenler</h2>
+            <p>Otomatik menüde kullanılmamasını istediklerinizi seçin.</p>
+          </div>
+          <button class="btn btn-sm" id="btn-reset-allergen-preferences" type="button">Sıfırla</button>
+        </div>
+        <div class="allergen-settings-grid" id="allergen-preferences-grid"></div>
+        <details class="allergen-settings-advanced">
+          <summary>Gelişmiş filtre kuralları</summary>
+          <div class="allergen-preference-options">
+            <label class="allergen-option" for="pref-possible-unsafe">
+              <input type="checkbox" id="pref-possible-unsafe">
+              <span>Tarife göre bulunabilecekleri de çıkar</span>
+            </label>
+            <label class="allergen-option" for="pref-may-contain-unsafe">
+              <input type="checkbox" id="pref-may-contain-unsafe">
+              <span>Çapraz temas uyarısı olanları da çıkar</span>
+            </label>
+            <label class="allergen-option" for="pref-exclude-unknown">
+              <input type="checkbox" id="pref-exclude-unknown">
+              <span>Bilgisi bilinmeyen yemekleri çıkar</span>
+            </label>
+          </div>
+        </details>
+        <p class="allergen-health-notice">Alerjen bilgileri genel bilgilendirme amaçlıdır. Tarifler, kullanılan ürünler ve hazırlama koşulları değişebilir. Ciddi alerjisi bulunan kullanıcılar malzeme listesini, ürün etiketini ve çapraz temas riskini ayrıca kontrol etmelidir.</p>
+      </div>
+    </details>
+
     <!-- Menu Grid -->
     <section class="menu-grid" id="menu-grid"></section>
 
@@ -97,7 +139,7 @@
       <!-- Header -->
       <div class="food-mgmt-header">
         <div>
-          <h2 class="food-mgmt-title">Yemek Veritabanı</h2>
+          <h2 class="food-mgmt-title">Yemekler ve Kaloriler</h2>
           <span class="food-mgmt-subtitle" id="food-total-count">0 yemek</span>
         </div>
         <button class="btn btn-primary" id="btn-add-food"><span>➕</span> Yeni Yemek Ekle</button>
@@ -136,6 +178,7 @@
             <input type="text" id="new-food-portion" placeholder="1 porsiyon" class="form-input">
           </div>
         </div>
+        <div class="allergen-editor" id="new-food-allergen-editor" aria-label="Yeni yemek alerjen bilgileri"></div>
         <div class="food-form-actions">
           <button class="btn btn-primary" id="food-form-save">✓ Kaydet</button>
           <button class="btn" id="food-form-cancel">İptal</button>
@@ -148,19 +191,41 @@
           <span class="food-search-icon">🔍</span>
           <input type="text" id="food-mgmt-search" placeholder="Yemek adı ile ara..." class="food-mgmt-search-input">
         </div>
-        <div class="food-cat-filters">
-          <button class="food-cat-filter-btn active" data-category="all">Tümü</button>
-          <button class="food-cat-filter-btn" data-category="corba">🍲 Çorbalar</button>
-          <button class="food-cat-filter-btn" data-category="ana_et">🍗 Et/Tavuk</button>
-          <button class="food-cat-filter-btn" data-category="ana_sebze">🥘 Sebze</button>
-          <button class="food-cat-filter-btn" data-category="pilav">🍚 Pilav</button>
-          <button class="food-cat-filter-btn" data-category="makarna">🍝 Makarna</button>
-          <button class="food-cat-filter-btn" data-category="borek">🥟 Börek</button>
-          <button class="food-cat-filter-btn" data-category="salata">🥗 Salata</button>
-          <button class="food-cat-filter-btn" data-category="icecek">🥛 İçecek</button>
-          <button class="food-cat-filter-btn" data-category="tatli">🍮 Tatlı</button>
-          <button class="food-cat-filter-btn" data-category="meyve">🍎 Meyve</button>
-          <button class="food-cat-filter-btn" data-category="diger">🍽️ Diğer</button>
+        <div class="food-filter-row">
+          <label class="sr-only" for="food-category-filter">Kategori</label>
+          <select id="food-category-filter" class="form-input food-category-filter">
+            <option value="all">Tüm kategoriler</option>
+            <option value="corba">🍲 Çorbalar</option>
+            <option value="ana_et">🍗 Et / Tavuk</option>
+            <option value="ana_sebze">🥘 Sebze Yemekleri</option>
+            <option value="pilav">🍚 Pilavlar</option>
+            <option value="makarna">🍝 Makarnalar</option>
+            <option value="borek">🥟 Börekler</option>
+            <option value="salata">🥗 Salatalar</option>
+            <option value="icecek">🥛 İçecekler</option>
+            <option value="tatli">🍮 Tatlılar</option>
+            <option value="meyve">🍎 Meyveler</option>
+            <option value="diger">🍽️ Diğer</option>
+          </select>
+          <details class="food-advanced-filters">
+            <summary class="btn">Alerjen filtresi</summary>
+            <div class="allergen-filter" aria-label="Alerjen filtresi">
+              <label for="food-allergen-filter-id">Alerjen</label>
+              <select id="food-allergen-filter-id" class="form-input">
+                <option value="">Alerjen seçin</option>
+              </select>
+              <label for="food-allergen-filter-mode">Göster</label>
+              <select id="food-allergen-filter-mode" class="form-input">
+                <option value="all">Tüm yemekler</option>
+                <option value="contains">İçerenler</option>
+                <option value="possibleContains">Tarife göre içerebilenler</option>
+                <option value="mayContain">Çapraz temas uyarısı olanlar</option>
+                <option value="unknown">Bilgisi bilinmeyenler</option>
+                <option value="conflict">Tercihlerimle çakışanlar</option>
+                <option value="profileWithout">Kayıtlı profilde bulunmayanlar</option>
+              </select>
+            </div>
+          </details>
         </div>
       </div>
 
@@ -190,6 +255,7 @@
   <div class="toast-container" id="toast-container"></div>
 
   <!-- ══════════ SCRIPTS ══════════ -->
+  <script src="js/allergens.js"></script>
   <script src="js/data.js"></script>
   <script src="js/storage.js"></script>
   <script src="js/xlsx-js-style.min.js"></script>

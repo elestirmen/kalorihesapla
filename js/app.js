@@ -9,7 +9,8 @@ let searchTarget = null;
 let selectedSearchIndex = -1;
 let clipboard = null; // { lunch, dinner, lunchPortions, dinnerPortions }
 let activeTab = 'planner';
-let foodMgmtFilter = { query: '', category: 'all' };
+let foodMgmtFilter = { query: '', category: 'all', allergenId: '', allergenMode: 'all' };
+let editingAllergenFoodId = null;
 let saveTimeout = null;
 
 const PORTION_OPTIONS = [0.5, 1, 1.5, 2];
@@ -109,10 +110,21 @@ function cacheDOM() {
   DOM.goalInput = document.getElementById('goal-input');
   DOM.tabPlanner = document.getElementById('tab-planner');
   DOM.tabFoods = document.getElementById('tab-foods');
+  DOM.plannerControls = document.getElementById('planner-controls');
+  DOM.plannerActions = document.getElementById('planner-actions');
   DOM.foodSearch = document.getElementById('food-mgmt-search');
   DOM.foodList = document.getElementById('food-mgmt-list');
   DOM.foodAddForm = document.getElementById('food-add-form');
   DOM.foodCount = document.getElementById('food-total-count');
+  DOM.allergenPreferencesGrid = document.getElementById('allergen-preferences-grid');
+  DOM.prefPossibleUnsafe = document.getElementById('pref-possible-unsafe');
+  DOM.prefMayContainUnsafe = document.getElementById('pref-may-contain-unsafe');
+  DOM.prefExcludeUnknown = document.getElementById('pref-exclude-unknown');
+  DOM.allergenSettingsSummaryValue = document.getElementById('allergen-settings-summary-value');
+  DOM.newFoodAllergenEditor = document.getElementById('new-food-allergen-editor');
+  DOM.foodCategoryFilter = document.getElementById('food-category-filter');
+  DOM.foodAllergenFilterId = document.getElementById('food-allergen-filter-id');
+  DOM.foodAllergenFilterMode = document.getElementById('food-allergen-filter-mode');
 }
 
 function initApp() {
@@ -130,6 +142,10 @@ function initApp() {
   if (DOM.goalInput) {
     DOM.goalInput.value = settings.dailyCalorieGoal || 2000;
   }
+
+  renderAllergenPreferences();
+  renderFoodAllergenFilterOptions();
+  renderNewFoodAllergenEditor();
 
   renderWeek();
   updateStats();
@@ -187,20 +203,35 @@ function bindEvents() {
     renderFoodList();
   });
 
-  document.getElementById('btn-add-food')?.addEventListener('click', toggleAddFoodForm);
-
-  document.querySelectorAll('.food-cat-filter-btn').forEach(btn => {
-    btn.addEventListener('click', () => {
-      document.querySelectorAll('.food-cat-filter-btn').forEach(item => item.classList.remove('active'));
-      btn.classList.add('active');
-      foodMgmtFilter.category = btn.dataset.category;
-      renderFoodList();
-    });
+  DOM.foodCategoryFilter?.addEventListener('change', event => {
+    foodMgmtFilter.category = event.target.value;
+    renderFoodList();
   });
+
+  DOM.foodAllergenFilterId?.addEventListener('change', event => {
+    foodMgmtFilter.allergenId = event.target.value;
+    renderFoodList();
+  });
+  DOM.foodAllergenFilterMode?.addEventListener('change', event => {
+    foodMgmtFilter.allergenMode = event.target.value;
+    renderFoodList();
+  });
+
+  DOM.allergenPreferencesGrid?.addEventListener('change', event => {
+    const allergenId = event.target.dataset.avoidedAllergen;
+    if (allergenId) updateAvoidedAllergen(allergenId, event.target.checked);
+  });
+  DOM.prefPossibleUnsafe?.addEventListener('change', saveAllergenPreferenceOptions);
+  DOM.prefMayContainUnsafe?.addEventListener('change', saveAllergenPreferenceOptions);
+  DOM.prefExcludeUnknown?.addEventListener('change', saveAllergenPreferenceOptions);
+  document.getElementById('btn-reset-allergen-preferences')?.addEventListener('click', resetAllergenPreferences);
+
+  document.getElementById('btn-add-food')?.addEventListener('click', toggleAddFoodForm);
 
   document.getElementById('food-form-save')?.addEventListener('click', saveNewFood);
   document.getElementById('food-form-cancel')?.addEventListener('click', () => {
     DOM.foodAddForm?.classList.add('hidden');
+    renderNewFoodAllergenEditor();
   });
 
   document.addEventListener('keydown', event => {
@@ -213,6 +244,16 @@ function bindEvents() {
   document.addEventListener('click', event => {
     if (!event.target.closest('.saved-weeks-wrapper')) closeWeeksDropdown();
   });
+
+  document.addEventListener('change', event => {
+    if (event.target.matches('[data-allergen-editor-status]')) {
+      delete event.target.dataset.allergenAutoStatus;
+      return;
+    }
+    if (event.target.matches('input[data-allergen-editor-group]')) {
+      syncAllergenEditorPriorities(event.target);
+    }
+  });
 }
 
 function switchTab(tab) {
@@ -223,12 +264,273 @@ function switchTab(tab) {
 
   DOM.tabPlanner?.classList.toggle('hidden', tab !== 'planner');
   DOM.tabFoods?.classList.toggle('hidden', tab !== 'foods');
+  DOM.plannerControls?.classList.toggle('hidden', tab !== 'planner');
+  DOM.plannerActions?.classList.toggle('hidden', tab !== 'planner');
 
   if (tab === 'foods') renderFoodList();
   if (tab === 'planner') {
     renderWeek();
     updateStats();
   }
+}
+
+function getCurrentAllergenPreferences() {
+  return normalizeAllergenPreferences(Storage.getSettings());
+}
+
+function renderAllergenPreferences() {
+  const preferences = getCurrentAllergenPreferences();
+  const avoided = new Set(preferences.avoidedAllergens);
+
+  if (DOM.allergenPreferencesGrid) {
+    DOM.allergenPreferencesGrid.innerHTML = Object.entries(ALLERGENS).map(([id, allergen]) => {
+      const label = `${allergen.icon} ${allergen.name}`;
+      return `<label class="allergen-preference" title="${escapeHtml(label)}">
+        <input type="checkbox" data-avoided-allergen="${escapeHtml(id)}" aria-label="${escapeHtml(`${allergen.name} alerjeninden kaçın`)}" ${avoided.has(id) ? 'checked' : ''}>
+        <span>${allergen.icon} ${escapeHtml(allergen.name)}</span>
+      </label>`;
+    }).join('');
+  }
+
+  if (DOM.prefPossibleUnsafe) DOM.prefPossibleUnsafe.checked = preferences.treatPossibleContainsAsUnsafe;
+  if (DOM.prefMayContainUnsafe) DOM.prefMayContainUnsafe.checked = preferences.treatMayContainAsUnsafe;
+  if (DOM.prefExcludeUnknown) DOM.prefExcludeUnknown.checked = preferences.excludeUnknownAllergens;
+  if (DOM.allergenSettingsSummaryValue) {
+    const selected = formatCompactAllergenNames(preferences.avoidedAllergens, 3);
+    DOM.allergenSettingsSummaryValue.textContent = selected || 'Alerjen seçilmedi';
+  }
+}
+
+function updateAvoidedAllergen(allergenId, shouldAvoid) {
+  const preferences = getCurrentAllergenPreferences();
+  const avoided = new Set(preferences.avoidedAllergens);
+  if (shouldAvoid) avoided.add(allergenId);
+  else avoided.delete(allergenId);
+  Storage.saveSettings({ avoidedAllergens: normalizeAllergenIds([...avoided]) });
+  refreshAllergenDependentViews();
+}
+
+function saveAllergenPreferenceOptions() {
+  Storage.saveSettings({
+    treatPossibleContainsAsUnsafe: DOM.prefPossibleUnsafe?.checked !== false,
+    treatMayContainAsUnsafe: DOM.prefMayContainUnsafe?.checked !== false,
+    excludeUnknownAllergens: DOM.prefExcludeUnknown?.checked !== false
+  });
+  refreshAllergenDependentViews();
+}
+
+function resetAllergenPreferences() {
+  Storage.saveSettings({ ...DEFAULT_ALLERGEN_PREFERENCES });
+  renderAllergenPreferences();
+  refreshAllergenDependentViews();
+  showToast('Alerjen tercihleri sıfırlandı', 'info');
+}
+
+function refreshAllergenDependentViews() {
+  if (activeTab === 'planner') renderWeek();
+  if (activeTab === 'foods') renderFoodList();
+}
+
+function renderFoodAllergenFilterOptions() {
+  if (!DOM.foodAllergenFilterId) return;
+  DOM.foodAllergenFilterId.innerHTML = [
+    '<option value="">Alerjen seçin</option>',
+    ...Object.entries(ALLERGENS).map(([id, allergen]) => (
+      `<option value="${escapeHtml(id)}">${allergen.icon} ${escapeHtml(allergen.name)}</option>`
+    ))
+  ].join('');
+  DOM.foodAllergenFilterId.value = foodMgmtFilter.allergenId;
+  if (DOM.foodAllergenFilterMode) DOM.foodAllergenFilterMode.value = foodMgmtFilter.allergenMode;
+}
+
+function getFoodAllergenEditorId(foodId) {
+  return `allergen-editor-${String(foodId ?? '')}`;
+}
+
+function renderAllergenCheckboxGroup(editorId, group, label, selectedIds, modifierClass) {
+  const selected = new Set(selectedIds);
+  return `<fieldset class="allergen-editor-group ${modifierClass}">
+    <legend>${escapeHtml(label)}</legend>
+    <div class="allergen-editor-options">
+      ${Object.entries(ALLERGENS).map(([allergenId, allergen]) => {
+        const inputId = `${editorId}-${group}-${allergenId}`;
+        const fullLabel = `${label}: ${allergen.name}`;
+        return `<label class="allergen-editor-choice" for="${escapeHtml(inputId)}" title="${escapeHtml(fullLabel)}">
+          <input id="${escapeHtml(inputId)}" type="checkbox" data-allergen-editor-group="${group}" data-allergen-id="${allergenId}" aria-label="${escapeHtml(fullLabel)}" ${selected.has(allergenId) ? 'checked' : ''}>
+          <span>${allergen.icon} ${escapeHtml(allergen.shortName)}</span>
+        </label>`;
+      }).join('')}
+    </div>
+  </fieldset>`;
+}
+
+function getAllergenEditorMarkup(editorId, allergenInfo, actionHtml = '') {
+  const info = normalizeAllergenInfo(allergenInfo);
+  const statusOptions = Object.entries(ALLERGEN_STATUS_LABELS).map(([status, label]) => (
+    `<option value="${status}" ${info.status === status ? 'selected' : ''}>${escapeHtml(label)}</option>`
+  )).join('');
+  const statusId = `${editorId}-status`;
+  const noteId = `${editorId}-note`;
+  const advancedCount = info.possibleContains.length + info.mayContain.length + (info.note ? 1 : 0);
+
+  return `<div class="allergen-editor-content" data-allergen-editor-id="${escapeHtml(editorId)}">
+    <p class="allergen-editor-help">Yemeğin içerdiğini bildiğiniz alerjenleri seçin. Bilgi yoksa boş bırakın.</p>
+    <div class="allergen-editor-primary">
+      ${renderAllergenCheckboxGroup(editorId, 'contains', 'İçerdiği Alerjenler', info.contains, 'contains')}
+    </div>
+    <details class="allergen-editor-advanced">
+      <summary>Tarif, çapraz temas ve not${advancedCount ? ` (${advancedCount})` : ''}</summary>
+      <div class="allergen-editor-groups">
+        ${renderAllergenCheckboxGroup(editorId, 'possibleContains', 'Tarife Göre Bulunabilir', info.possibleContains, 'possible')}
+        ${renderAllergenCheckboxGroup(editorId, 'mayContain', 'Çapraz Temas Uyarısı', info.mayContain, 'may-contain')}
+      </div>
+      <div class="allergen-editor-meta">
+        <label class="allergen-status" for="${escapeHtml(statusId)}">Bilgi Durumu
+          <select id="${escapeHtml(statusId)}" data-allergen-editor-status class="form-input">${statusOptions}</select>
+        </label>
+        <label class="allergen-note" for="${escapeHtml(noteId)}">Açıklama veya Not
+          <textarea id="${escapeHtml(noteId)}" data-allergen-editor-note class="form-input" maxlength="${ALLERGEN_NOTE_MAX_LENGTH}" rows="3">${escapeHtml(info.note)}</textarea>
+        </label>
+      </div>
+    </details>
+    ${actionHtml}
+  </div>`;
+}
+
+function renderNewFoodAllergenEditor() {
+  if (!DOM.newFoodAllergenEditor) return;
+  DOM.newFoodAllergenEditor.innerHTML = getAllergenEditorMarkup('new-food-allergen-editor', DEFAULT_ALLERGEN_INFO);
+}
+
+function getAllergenInfoFromEditor(editorId) {
+  const editor = document.getElementById(editorId);
+  if (!editor) return normalizeAllergenInfo(DEFAULT_ALLERGEN_INFO);
+  const selected = group => [...editor.querySelectorAll(`input[data-allergen-editor-group="${group}"]:checked`)]
+    .map(input => input.dataset.allergenId);
+  return normalizeAllergenInfo({
+    contains: selected('contains'),
+    possibleContains: selected('possibleContains'),
+    mayContain: selected('mayContain'),
+    status: editor.querySelector('[data-allergen-editor-status]')?.value,
+    note: editor.querySelector('[data-allergen-editor-note]')?.value
+  });
+}
+
+function getAllergenEditorInput(editor, group, allergenId) {
+  return editor.querySelector(`input[data-allergen-editor-group="${group}"][data-allergen-id="${allergenId}"]`);
+}
+
+function syncAllergenEditorPriorities(input) {
+  const editor = input.closest('.allergen-editor');
+  const group = input.dataset.allergenEditorGroup;
+  const allergenId = input.dataset.allergenId;
+  if (!editor || !group || !allergenId) return;
+
+  const statusSelect = editor.querySelector('[data-allergen-editor-status]');
+  if (!input.checked) {
+    const hasSelectedAllergen = editor.querySelector('input[data-allergen-editor-group]:checked');
+    if (!hasSelectedAllergen && statusSelect?.dataset.allergenAutoStatus === 'true') {
+      statusSelect.value = ALLERGEN_INFO_STATUS.unknown;
+      delete statusSelect.dataset.allergenAutoStatus;
+    }
+    return;
+  }
+
+  if (input.checked && statusSelect?.value === ALLERGEN_INFO_STATUS.unknown) {
+    statusSelect.value = ALLERGEN_INFO_STATUS.verified;
+    statusSelect.dataset.allergenAutoStatus = 'true';
+  }
+
+  const uncheck = targetGroup => {
+    const target = getAllergenEditorInput(editor, targetGroup, allergenId);
+    if (target) target.checked = false;
+  };
+  const isChecked = targetGroup => Boolean(getAllergenEditorInput(editor, targetGroup, allergenId)?.checked);
+
+  if (group === 'contains') {
+    uncheck('possibleContains');
+    uncheck('mayContain');
+  } else if (group === 'possibleContains') {
+    if (isChecked('contains')) input.checked = false;
+    else uncheck('mayContain');
+  } else if (group === 'mayContain' && (isChecked('contains') || isChecked('possibleContains'))) {
+    input.checked = false;
+  }
+}
+
+function formatCompactAllergenNames(ids, limit = 2) {
+  const names = ids.map(id => ALLERGENS[id]?.shortName).filter(Boolean);
+  if (names.length <= limit) return names.join(', ');
+  return `${names.slice(0, limit).join(', ')} +${names.length - limit}`;
+}
+
+function renderFoodAllergenSummary(food) {
+  const info = getFoodAllergenInfo(food);
+  const detailText = formatAllergenInfo(info);
+  const parts = [];
+  if (info.contains.length) parts.push(formatCompactAllergenNames(info.contains, 3));
+  if (info.possibleContains.length) parts.push(`${formatCompactAllergenNames(info.possibleContains, 2)} olabilir`);
+  if (info.mayContain.length) parts.push(`${formatCompactAllergenNames(info.mayContain, 2)} çapraz temas`);
+
+  let text = parts.length ? `Alerjen: ${parts.join(' · ')}` : 'Kayıtlı profilde alerjen belirtilmemiş';
+  let className = info.contains.length ? 'has-contains' : info.possibleContains.length ? 'has-possible' : info.mayContain.length ? 'has-may-contain' : '';
+  if (!parts.length && info.status === ALLERGEN_INFO_STATUS.unknown) {
+    text = '? Alerjen bilgisi girilmemiş';
+    className = 'is-unknown';
+  }
+
+  return `<div class="food-allergen-summary" title="${escapeHtml(detailText)}" aria-label="${escapeHtml(detailText)}"><span class="allergen-profile-summary ${className}">${escapeHtml(text)}</span></div>`;
+}
+
+function renderSearchAllergenSummary(food) {
+  const info = getFoodAllergenInfo(food);
+  const details = getAllergenConflictDetails(food, getCurrentAllergenPreferences());
+  const hasExplicitConflict = details.contains.length > 0 || details.possibleContains.length > 0 || details.mayContain.length > 0;
+  const summary = formatAllergenInfo(info, { compact: true, short: true });
+  const profileText = summary || 'Kayıtlı profilde AB 14 grubu belirtilmemiş';
+  return `<div class="search-allergen-summary">
+    <span class="allergen-search-text" title="${escapeHtml(formatAllergenInfo(info))}">${escapeHtml(profileText)}</span>
+    ${hasExplicitConflict ? '<span class="allergen-warning allergen-conflict">Tercihle çakışıyor</span>' : ''}
+  </div>`;
+}
+
+function renderMealSlotAllergenIndicator(food) {
+  const info = getFoodAllergenInfo(food);
+  const details = getAllergenConflictDetails(food, getCurrentAllergenPreferences());
+  const hasExplicitConflict = details.contains.length > 0 || details.possibleContains.length > 0 || details.mayContain.length > 0;
+  const detailText = formatAllergenInfo(info);
+  const segments = [];
+  if (info.contains.length) segments.push(`⚠ ${formatCompactAllergenNames(info.contains, 2)}`);
+  if (info.possibleContains.length) segments.push(`~ ${formatCompactAllergenNames(info.possibleContains, 1)} olabilir`);
+  if (info.mayContain.length) segments.push(`↔ ${formatCompactAllergenNames(info.mayContain, 1)} çapraz temas`);
+
+  let text = segments.join(' · ');
+  let className = info.contains.length ? 'allergen-chip-contains' : info.possibleContains.length ? 'allergen-chip-possible' : 'allergen-chip-may-contain';
+  if (hasExplicitConflict) className += ' allergen-conflict';
+  if (!text && info.status === ALLERGEN_INFO_STATUS.unknown) {
+    text = '? Alerjen bilgisi yok';
+    className = 'allergen-badge-unknown';
+  }
+
+  if (!text) return '';
+  const ariaLabel = hasExplicitConflict ? `Alerjen tercihiyle çakışıyor: ${text}` : text;
+  return `<span class="allergen-slot-indicator ${className}" aria-label="${escapeHtml(ariaLabel)}" title="${escapeHtml(detailText)}">${escapeHtml(text)}</span>`;
+}
+
+function getManualAllergenWarning(food) {
+  const info = getFoodAllergenInfo(food);
+  const details = getAllergenConflictDetails(food, getCurrentAllergenPreferences());
+  const labelList = ids => ids.map(getAllergenLabel).filter(Boolean).join(', ');
+  const sections = [];
+
+  if (details.contains.length) sections.push(`Bu yemek seçtiğiniz alerjenlerden birini içeriyor:\n\n${labelList(details.contains)}`);
+  if (details.possibleContains.length) sections.push(`Tarife göre bulunabilir:\n\n${labelList(details.possibleContains)}`);
+  if (details.mayContain.length) sections.push(`Çapraz temas uyarısı:\n\n${labelList(details.mayContain)}`);
+  if (info.status === ALLERGEN_INFO_STATUS.unknown) {
+    sections.push('Bu yemeğin alerjen bilgisi doğrulanmamıştır.\n\nTarifi, kullanılan ürünleri ve çapraz temas riskini kontrol etmeden güvenli kabul etmeyin.');
+  }
+
+  return sections.length ? `${sections.join('\n\n')}\n\nYine de eklemek istiyor musunuz?` : '';
 }
 
 function createNewWeekFromDate(date) {
@@ -374,15 +676,19 @@ function renderMealSlots(slots, portions, dayIndex, mealType) {
     const catColor = FOOD_CATEGORIES[food.category]?.color || '#7a7060';
     const isFav = Storage.isFavorite(foodId);
     const portionLabel = portion !== 1 ? `${portion}x` : '1x';
-    const title = `${food.portion}${portion !== 1 ? ` - ${portionLabel} porsiyon` : ''}`;
+    const allergenInfo = getFoodAllergenInfo(food);
+    const conflictDetails = getAllergenConflictDetails(food, getCurrentAllergenPreferences());
+    const conflict = conflictDetails.contains.length > 0 || conflictDetails.possibleContains.length > 0 || conflictDetails.mayContain.length > 0;
+    const title = `${food.portion}${portion !== 1 ? ` - ${portionLabel} porsiyon` : ''}\n${formatAllergenInfo(allergenInfo)}`;
     const foodIdArg = toInlineHandlerArg(foodId);
 
     return `
-      <div class="food-slot filled" title="${escapeHtml(title)}">
+      <div class="food-slot filled ${conflict ? 'allergen-conflict' : ''}" title="${escapeHtml(title)}">
         <span class="food-cat-dot" style="background:${catColor}"></span>
         <span class="food-slot-name" onclick="openSearch(${dayIndex},${mealTypeArg},${index})">${escapeHtml(food.name)}</span>
+        ${renderMealSlotAllergenIndicator(food)}
         <button class="food-slot-portion ${portion === 1 ? 'dim' : ''}" onclick="cyclePortion(${dayIndex},${mealTypeArg},${index})" title="Porsiyon değiştir">${portionLabel}</button>
-        <span class="food-slot-cal">${calories}</span>
+        <span class="food-slot-cal">${calories} kcal</span>
         <button class="food-slot-fav ${isFav ? 'active' : ''}" onclick="event.stopPropagation(); toggleFoodFav(${foodIdArg}, ${dayIndex})" title="Favori">★</button>
         <button class="food-slot-remove" onclick="event.stopPropagation(); removeFood(${dayIndex},${mealTypeArg},${index})" title="Kaldır">✕</button>
       </div>`;
@@ -536,14 +842,19 @@ function renderSearchItem(food, index) {
   const selected = index === selectedSearchIndex ? ' selected' : '';
   const isFavorite = Storage.isFavorite(food.id);
   const foodIdArg = toInlineHandlerArg(food.id);
+  const conflictDetails = getAllergenConflictDetails(food, getCurrentAllergenPreferences());
+  const conflict = conflictDetails.contains.length > 0 || conflictDetails.possibleContains.length > 0 || conflictDetails.mayContain.length > 0;
 
   return `
-    <div class="search-result-item${selected}" data-index="${index}" data-food-id="${escapeHtml(food.id)}">
+    <div class="search-result-item${selected}${conflict ? ' allergen-conflict' : ''}" data-index="${index}" data-food-id="${escapeHtml(food.id)}" onclick="selectFood(${foodIdArg})">
       <button class="search-fav-btn ${isFavorite ? 'active' : ''}" onclick="event.stopPropagation(); toggleSearchFav(${foodIdArg})" title="Favori">${isFavorite ? '★' : '☆'}</button>
       <span class="search-result-dot" style="background:${catColor}"></span>
-      <span class="search-result-name" onclick="selectFood(${foodIdArg})">${escapeHtml(food.name)}</span>
+      <div class="search-result-info">
+        <span class="search-result-name">${escapeHtml(food.name)}</span>
+        ${renderSearchAllergenSummary(food)}
+      </div>
       <span class="search-result-portion">${escapeHtml(food.portion)}</span>
-      <span class="search-result-cal" onclick="selectFood(${foodIdArg})">${food.calories} kcal</span>
+      <span class="search-result-cal">${food.calories} kcal</span>
     </div>`;
 }
 
@@ -562,6 +873,9 @@ function selectFood(foodId) {
     showToast('Yemek bulunamadı', 'error');
     return;
   }
+
+  const warning = getManualAllergenWarning(food);
+  if (warning && !confirm(warning)) return;
 
   const { dayIndex, mealType, slotIndex } = searchTarget;
   currentWeek.days[dayIndex][mealType][slotIndex] = foodId;
@@ -705,12 +1019,87 @@ function exportCurrentWeek() {
 
 function exportExcel() {
   persistCurrentWeek();
-  {
-    const xlsx = window.XLSX;
-    if (!xlsx?.utils?.book_new || typeof xlsx.writeFile !== 'function') {
-      showToast('Excel disa aktarma modulu yuklenemedi', 'error');
-      return;
-    }
+  const exportPreferences = getCurrentAllergenPreferences();
+  const allergenSeverityRank = Object.freeze({
+    none: 0,
+    unknown: 1,
+    mayContain: 2,
+    possible: 3,
+    contains: 4,
+    conflict: 5
+  });
+
+  function getExportAllergenSeverity(food) {
+    if (!food) return 'none';
+    const info = getFoodAllergenInfo(food);
+    const conflict = getAllergenConflictDetails(food, exportPreferences);
+    if (conflict.contains.length || conflict.possibleContains.length || conflict.mayContain.length) return 'conflict';
+    if (info.contains.length) return 'contains';
+    if (info.possibleContains.length) return 'possible';
+    if (info.mayContain.length) return 'mayContain';
+    if (info.status === ALLERGEN_INFO_STATUS.unknown) return 'unknown';
+    return 'none';
+  }
+
+  function getMealAllergenSeverity(items) {
+    return items.reduce((highest, item) => {
+      const severity = getExportAllergenSeverity(item.food);
+      return allergenSeverityRank[severity] > allergenSeverityRank[highest] ? severity : highest;
+    }, 'none');
+  }
+
+  function formatFoodAllergenWarning(food) {
+    if (!food) return '';
+    const info = getFoodAllergenInfo(food);
+    const conflict = getAllergenConflictDetails(food, exportPreferences);
+    const labels = ids => ids.map(getAllergenShortLabel).filter(Boolean).join(', ');
+    const conflictIds = normalizeAllergenIds([
+      ...conflict.contains,
+      ...conflict.possibleContains,
+      ...conflict.mayContain
+    ]);
+    const lines = [];
+
+    if (conflictIds.length) lines.push(`⚠ TERCİHLERLE ÇAKIŞIYOR: ${labels(conflictIds)}`);
+    if (info.contains.length) lines.push(`İÇERİR: ${labels(info.contains)}`);
+    if (info.possibleContains.length) lines.push(`TARİFE GÖRE BULUNABİLİR: ${labels(info.possibleContains)}`);
+    if (info.mayContain.length) lines.push(`ÇAPRAZ TEMAS: ${labels(info.mayContain)}`);
+    if (info.status === ALLERGEN_INFO_STATUS.unknown) lines.push('? ALERJEN BİLGİSİ DOĞRULANMAMIŞ');
+    if (!lines.length) lines.push('Kayıtlı profilde alerjen belirtilmemiş');
+    return lines.join('\n');
+  }
+
+  function formatCompactFoodAllergenWarning(food) {
+    if (!food) return '';
+    const info = getFoodAllergenInfo(food);
+    const conflict = getAllergenConflictDetails(food, exportPreferences);
+    const labels = ids => ids.map(getAllergenShortLabel).filter(Boolean).join(', ');
+    const conflictIds = normalizeAllergenIds([
+      ...conflict.contains,
+      ...conflict.possibleContains,
+      ...conflict.mayContain
+    ]);
+    const parts = [];
+
+    if (conflictIds.length) parts.push(`[TERCİH ÇAKIŞMASI] ${labels(conflictIds)}`);
+    if (info.contains.length) parts.push(`[İÇERİR] ${labels(info.contains)}`);
+    if (info.possibleContains.length) parts.push(`[OLABİLİR] ${labels(info.possibleContains)}`);
+    if (info.mayContain.length) parts.push(`[ÇAPRAZ TEMAS] ${labels(info.mayContain)}`);
+    if (info.status === ALLERGEN_INFO_STATUS.unknown) parts.push('[BİLGİ YOK] Doğrulanmamış');
+    return parts.join(' · ');
+  }
+
+  function describeExportMealAllergens(items) {
+    if (!items.length) return '-';
+    const warningItems = items.filter(item => getExportAllergenSeverity(item.food) !== 'none');
+    if (!warningItems.length) return 'Kayıtlı profilde alerjen uyarısı bulunmuyor';
+    return warningItems.map(item => (
+      `${sanitizeExcelText(item.rawName || item.name)}\n${sanitizeExcelText(formatFoodAllergenWarning(item.food))}`
+    )).join('\n\n');
+  }
+
+  const xlsx = window.XLSX;
+  if (xlsx?.utils?.book_new && typeof xlsx.writeFile === 'function') {
 
     const exportGoal = Storage.getSettings().dailyCalorieGoal || 2000;
     const weekLabel = sanitizeExcelText(currentWeek.label || currentWeekId);
@@ -737,6 +1126,16 @@ function exportExcel() {
       warnText: 'C46A00',
       overBg: 'FBE8E7',
       overText: 'B3332E',
+      allergenDanger: '9F2D28',
+      allergenDangerBg: 'FDE8E7',
+      allergenPossibleBg: 'FFF0DA',
+      allergenMayBg: 'FFF7D6',
+      allergenMayText: '755B00',
+      allergenUnknownBg: 'ECEFF1',
+      allergenUnknownText: '59636B',
+      allergenNoneBg: 'F4F6F5',
+      teal: '2F7467',
+      tealSoft: 'E6F3F0',
       white: 'FFFFFF'
     };
 
@@ -786,10 +1185,22 @@ function exportExcel() {
         alignment: { horizontal: 'center', vertical: 'center', wrapText: true },
         border: baseBorder
       },
+      allergenHeader: {
+        font: { name: 'Calibri', sz: 10, bold: true, color: { rgb: palette.white } },
+        fill: { patternType: 'solid', fgColor: { rgb: palette.allergenDanger } },
+        alignment: { horizontal: 'center', vertical: 'center', wrapText: true },
+        border: baseBorder
+      },
+      allergenLegend: {
+        font: { name: 'Calibri', sz: 9, bold: true, color: { rgb: palette.allergenMayText } },
+        fill: { patternType: 'solid', fgColor: { rgb: palette.allergenMayBg } },
+        alignment: { horizontal: 'left', vertical: 'center', wrapText: true },
+        border: baseBorder
+      },
       dayCell: {
         font: { name: 'Calibri', sz: 11, bold: true, color: { rgb: palette.accentDark } },
         fill: { patternType: 'solid', fgColor: { rgb: palette.accentSoft } },
-        alignment: { horizontal: 'center', vertical: 'center' },
+        alignment: { horizontal: 'center', vertical: 'center', wrapText: true },
         border: baseBorder
       },
       dateCell: {
@@ -818,15 +1229,10 @@ function exportExcel() {
         border: baseBorder,
         numFmt: '0 "kcal"'
       },
-      goalPct: {
-        font: { name: 'Calibri', sz: 10, bold: true, color: { rgb: palette.inkDark } },
-        alignment: { horizontal: 'center', vertical: 'center' },
-        border: baseBorder,
-        numFmt: '0%'
-      },
-      status: {
-        font: { name: 'Calibri', sz: 10, bold: true, color: { rgb: palette.inkDark } },
-        alignment: { horizontal: 'center', vertical: 'center' },
+      wallDayTotal: {
+        font: { name: 'Calibri', sz: 11, bold: true, color: { rgb: palette.accentDark } },
+        fill: { patternType: 'solid', fgColor: { rgb: palette.cream } },
+        alignment: { horizontal: 'center', vertical: 'center', wrapText: true },
         border: baseBorder
       },
       detailDay: {
@@ -846,6 +1252,50 @@ function exportExcel() {
         fill: { patternType: 'solid', fgColor: { rgb: palette.white } },
         alignment: { horizontal: 'left', vertical: 'center', wrapText: true },
         border: baseBorder
+      },
+      allergenConflict: {
+        font: { name: 'Calibri', sz: 9, bold: true, color: { rgb: palette.allergenDanger } },
+        fill: { patternType: 'solid', fgColor: { rgb: palette.allergenDangerBg } },
+        alignment: { horizontal: 'left', vertical: 'top', wrapText: true },
+        border: {
+          ...baseBorder,
+          left: { style: 'medium', color: { rgb: palette.allergenDanger } }
+        }
+      },
+      allergenContains: {
+        font: { name: 'Calibri', sz: 9, bold: true, color: { rgb: palette.allergenDanger } },
+        fill: { patternType: 'solid', fgColor: { rgb: palette.allergenDangerBg } },
+        alignment: { horizontal: 'left', vertical: 'top', wrapText: true },
+        border: baseBorder
+      },
+      allergenPossible: {
+        font: { name: 'Calibri', sz: 9, bold: true, color: { rgb: palette.warnText } },
+        fill: { patternType: 'solid', fgColor: { rgb: palette.allergenPossibleBg } },
+        alignment: { horizontal: 'left', vertical: 'top', wrapText: true },
+        border: baseBorder
+      },
+      allergenMayContain: {
+        font: { name: 'Calibri', sz: 9, bold: true, color: { rgb: palette.allergenMayText } },
+        fill: { patternType: 'solid', fgColor: { rgb: palette.allergenMayBg } },
+        alignment: { horizontal: 'left', vertical: 'top', wrapText: true },
+        border: baseBorder
+      },
+      allergenUnknown: {
+        font: { name: 'Calibri', sz: 9, bold: true, color: { rgb: palette.allergenUnknownText } },
+        fill: { patternType: 'solid', fgColor: { rgb: palette.allergenUnknownBg } },
+        alignment: { horizontal: 'left', vertical: 'top', wrapText: true },
+        border: baseBorder
+      },
+      allergenNone: {
+        font: { name: 'Calibri', sz: 9, color: { rgb: palette.inkSoft } },
+        fill: { patternType: 'solid', fgColor: { rgb: palette.allergenNoneBg } },
+        alignment: { horizontal: 'left', vertical: 'top', wrapText: true },
+        border: baseBorder
+      },
+      allergenSheetTitle: {
+        font: { name: 'Calibri', sz: 16, bold: true, color: { rgb: palette.white } },
+        fill: { patternType: 'solid', fgColor: { rgb: palette.allergenDanger } },
+        alignment: { horizontal: 'center', vertical: 'center' }
       },
       detailTotalLabel: {
         font: { name: 'Calibri', sz: 10, bold: true, color: { rgb: palette.inkDark } },
@@ -871,6 +1321,18 @@ function exportExcel() {
       return cell('', style, 's');
     }
 
+    function getAllergenCellStyle(items) {
+      const severity = Array.isArray(items) ? getMealAllergenSeverity(items) : getExportAllergenSeverity(items);
+      return {
+        conflict: styles.allergenConflict,
+        contains: styles.allergenContains,
+        possible: styles.allergenPossible,
+        mayContain: styles.allergenMayContain,
+        unknown: styles.allergenUnknown,
+        none: styles.allergenNone
+      }[severity];
+    }
+
     function formatPortion(portion) {
       const numericPortion = Number(portion || 1);
       return Number.isInteger(numericPortion)
@@ -888,8 +1350,11 @@ function exportExcel() {
           const portion = Number(portions?.[index] ?? 1);
           return {
             name: sanitizeExcelText(food.name),
+            rawName: food.name,
             calories: Math.round(food.calories * portion),
-            portion
+            portion,
+            food,
+            allergenInfo: getFoodAllergenInfo(food)
           };
         })
         .filter(Boolean);
@@ -902,52 +1367,25 @@ function exportExcel() {
         .join('\n');
     }
 
-    function getStatusMeta(ratio) {
-      if (ratio > 1) {
-        return {
-          label: 'Hedef ustu',
-          pctStyle: {
-            ...styles.goalPct,
-            fill: { patternType: 'solid', fgColor: { rgb: palette.overBg } },
-            font: { name: 'Calibri', sz: 10, bold: true, color: { rgb: palette.overText } }
-          },
-          statusStyle: {
-            ...styles.status,
-            fill: { patternType: 'solid', fgColor: { rgb: palette.overBg } },
-            font: { name: 'Calibri', sz: 10, bold: true, color: { rgb: palette.overText } }
-          }
-        };
-      }
+    function describeWallMeal(items, mealTotal) {
+      if (!items.length) return '-';
+      const foods = items.map((item, index) => (
+        `${index + 1}. ${item.name}${item.portion !== 1 ? ` (${formatPortion(item.portion)}x)` : ''} · ${item.calories} kcal`
+      ));
+      foods.push(`Öğün toplamı: ${mealTotal} kcal`);
+      return foods.join('\n');
+    }
 
-      if (ratio >= 0.85) {
-        return {
-          label: 'Dengeli',
-          pctStyle: {
-            ...styles.goalPct,
-            fill: { patternType: 'solid', fgColor: { rgb: palette.warnBg } },
-            font: { name: 'Calibri', sz: 10, bold: true, color: { rgb: palette.warnText } }
-          },
-          statusStyle: {
-            ...styles.status,
-            fill: { patternType: 'solid', fgColor: { rgb: palette.warnBg } },
-            font: { name: 'Calibri', sz: 10, bold: true, color: { rgb: palette.warnText } }
-          }
-        };
-      }
+    function describeWallMealAllergens(items) {
+      const warningItems = items.filter(item => getExportAllergenSeverity(item.food) !== 'none');
+      if (!warningItems.length) return 'Kayıtlı profilde uyarı yok';
+      return warningItems.map(item => (
+        `${item.name}: ${sanitizeExcelText(formatCompactFoodAllergenWarning(item.food))}`
+      )).join('\n');
+    }
 
-      return {
-        label: 'Dusuk',
-        pctStyle: {
-          ...styles.goalPct,
-          fill: { patternType: 'solid', fgColor: { rgb: palette.okBg } },
-          font: { name: 'Calibri', sz: 10, bold: true, color: { rgb: palette.okText } }
-        },
-        statusStyle: {
-          ...styles.status,
-          fill: { patternType: 'solid', fgColor: { rgb: palette.okBg } },
-          font: { name: 'Calibri', sz: 10, bold: true, color: { rgb: palette.okText } }
-        }
-      };
+    function describeMealAllergens(items) {
+      return describeExportMealAllergens(items);
     }
 
     const dayExports = currentWeek.days.map((day, dayIndex) => {
@@ -966,107 +1404,64 @@ function exportExcel() {
         lunchCal,
         dinnerCal,
         dayTotal,
-        ratio,
-        statusMeta: getStatusMeta(ratio)
+        ratio
       };
     });
 
     const weekTotal = dayExports.reduce((sum, entry) => sum + entry.dayTotal, 0);
-    const daysWithFood = dayExports.filter(entry => entry.dayTotal > 0).length;
     const avgDaily = Math.round(weekTotal / 7);
-    const activeAvg = daysWithFood > 0 ? Math.round(weekTotal / daysWithFood) : 0;
+    const allergenEntries = dayExports.flatMap(entry => [
+      ...entry.lunchItems.map(item => ({ ...item, day: entry.day, meal: 'Öğle' })),
+      ...entry.dinnerItems.map(item => ({ ...item, day: entry.day, meal: 'Akşam' }))
+    ]);
+    const unknownAllergenCount = allergenEntries.filter(entry => entry.allergenInfo.status === ALLERGEN_INFO_STATUS.unknown).length;
 
     const planRows = [
       [
-        cell('HAFTALIK YEMEK MENUSU', styles.title),
-        blank(styles.title),
-        blank(styles.title),
-        blank(styles.title),
-        blank(styles.title),
-        blank(styles.title),
-        blank(styles.title),
-        blank(styles.title),
-        blank(styles.title)
+        cell('HAFTALIK MENÜ', styles.title),
+        ...Array.from({ length: 5 }, () => blank(styles.title))
       ],
       [
-        cell(`${weekLabel} · Gunluk hedef: ${exportGoal} kcal · Olusturma: ${exportedAt}`, styles.subtitle),
-        blank(styles.subtitle),
-        blank(styles.subtitle),
-        blank(styles.subtitle),
-        blank(styles.subtitle),
-        blank(styles.subtitle),
-        blank(styles.subtitle),
-        blank(styles.subtitle),
-        blank(styles.subtitle)
+        cell(`${weekLabel} · Oluşturma: ${exportedAt}`, styles.subtitle),
+        ...Array.from({ length: 5 }, () => blank(styles.subtitle))
       ],
-      Array.from({ length: 9 }, () => blank()),
       [
-        cell('Haftalik toplam', styles.metricLabel),
+        cell('Haftalık toplam', styles.metricLabel),
         cell(weekTotal, styles.metricValue),
-        cell('Gunluk ortalama', styles.metricLabel),
+        cell('Günlük ortalama', styles.metricLabel),
         cell(avgDaily, styles.metricValue),
-        cell('Aktif gun ort.', styles.metricLabel),
-        cell(activeAvg, styles.metricValue),
-        cell('Gunluk hedef', styles.metricLabel),
-        cell(exportGoal, styles.metricValue),
-        cell(`Aktif gun: ${daysWithFood}/7`, styles.note)
+        cell('Günlük hedef', styles.metricLabel),
+        cell(exportGoal, styles.metricValue)
       ],
       [
-        cell('Not', styles.note),
-        cell('Dengeli = hedefin %85 ile %100 arasi', styles.note),
-        blank(styles.note),
-        blank(styles.note),
-        blank(styles.note),
-        blank(styles.note),
-        blank(styles.note),
-        blank(styles.note),
-        blank(styles.note)
+        cell('ALERJEN: Kırmızı = içerir veya tercih uyarısı · Turuncu = tarife göre bulunabilir · Sarı = çapraz temas · Gri = bilgi doğrulanmamış', styles.allergenLegend),
+        ...Array.from({ length: 5 }, () => blank(styles.allergenLegend))
       ]
     ];
 
     const planHeaderRowIndex = planRows.length;
     planRows.push([
-      cell('Gun', styles.header),
-      cell('Tarih', styles.header),
-      cell('Ogle menusu', styles.header),
-      cell('Ogle kcal', styles.header),
-      cell('Aksam menusu', styles.header),
-      cell('Aksam kcal', styles.header),
-      cell('Gunluk toplam', styles.header),
-      cell('Hedef %', styles.header),
-      cell('Durum', styles.header)
+      cell('GÜN / TARİH', styles.header),
+      cell('ÖĞLE MENÜSÜ', styles.header),
+      cell('Öğle Alerjen Uyarısı', styles.allergenHeader),
+      cell('AKŞAM MENÜSÜ', styles.header),
+      cell('Akşam Alerjen Uyarısı', styles.allergenHeader),
+      cell('GÜNLÜK TOPLAM', styles.header)
     ]);
 
     const detailRows = [
       [
         cell('YEMEK DETAYLARI', styles.title),
-        blank(styles.title),
-        blank(styles.title),
-        blank(styles.title),
-        blank(styles.title),
-        blank(styles.title),
-        blank(styles.title),
-        blank(styles.title),
-        blank(styles.title),
-        blank(styles.title),
-        blank(styles.title),
-        blank(styles.title)
+        ...Array.from({ length: 12 }, () => blank(styles.title))
       ],
       [
         cell(`${weekLabel} · Her ogun tek satirda listelenmistir`, styles.subtitle),
-        blank(styles.subtitle),
-        blank(styles.subtitle),
-        blank(styles.subtitle),
-        blank(styles.subtitle),
-        blank(styles.subtitle),
-        blank(styles.subtitle),
-        blank(styles.subtitle),
-        blank(styles.subtitle),
-        blank(styles.subtitle),
-        blank(styles.subtitle),
-        blank(styles.subtitle)
+        ...Array.from({ length: 12 }, () => blank(styles.subtitle))
       ],
-      Array.from({ length: 12 }, () => blank()),
+      [
+        cell('ALERJEN UYARISI: Kırmızı = içerir veya tercihle çakışır · Turuncu = tarife göre bulunabilir · Sarı = çapraz temas · Gri = bilgi doğrulanmamış. Bu bilgiler ürün etiketi ve profesyonel değerlendirme yerine geçmez.', styles.allergenLegend),
+        ...Array.from({ length: 12 }, () => blank(styles.allergenLegend))
+      ],
       [
         cell('Gun', styles.header),
         cell('Tarih', styles.header),
@@ -1079,30 +1474,29 @@ function exportExcel() {
         cell('kcal', styles.header),
         cell('4. Yemek', styles.header),
         cell('kcal', styles.header),
-        cell('Ogun toplami', styles.header)
+        cell('Ogun toplami', styles.header),
+        cell('ALERJEN UYARISI / BİLGİSİ', styles.allergenHeader)
       ]
     ];
+    const detailHeaderRowIndex = 3;
 
     const detailMerges = [
-      { s: { r: 0, c: 0 }, e: { r: 0, c: 11 } },
-      { s: { r: 1, c: 0 }, e: { r: 1, c: 11 } }
+      { s: { r: 0, c: 0 }, e: { r: 0, c: 12 } },
+      { s: { r: 1, c: 0 }, e: { r: 1, c: 12 } },
+      { s: { r: 2, c: 0 }, e: { r: 2, c: 12 } }
     ];
 
     dayExports.forEach(entry => {
       const altFill = entry.dayIndex % 2 === 0 ? palette.white : palette.creamAlt;
       const planTextStyle = { ...styles.menuText, fill: { patternType: 'solid', fgColor: { rgb: altFill } } };
-      const planKcalStyle = { ...styles.kcal, fill: { patternType: 'solid', fgColor: { rgb: altFill } } };
 
       planRows.push([
-        cell(sanitizeExcelText(entry.day.dayName), styles.dayCell),
-        cell(formatDate(entry.day.date), styles.dateCell),
-        cell(describeMeal(entry.lunchItems), planTextStyle),
-        cell(entry.lunchCal, planKcalStyle),
-        cell(describeMeal(entry.dinnerItems), planTextStyle),
-        cell(entry.dinnerCal, planKcalStyle),
-        cell(entry.dayTotal, styles.dayTotal),
-        cell(entry.ratio, entry.statusMeta.pctStyle),
-        cell(entry.statusMeta.label, entry.statusMeta.statusStyle)
+        cell(`${sanitizeExcelText(entry.day.dayName)}\n${formatDate(entry.day.date)}`, styles.dayCell),
+        cell(describeWallMeal(entry.lunchItems, entry.lunchCal), planTextStyle),
+        cell(describeWallMealAllergens(entry.lunchItems), getAllergenCellStyle(entry.lunchItems)),
+        cell(describeWallMeal(entry.dinnerItems, entry.dinnerCal), planTextStyle),
+        cell(describeWallMealAllergens(entry.dinnerItems), getAllergenCellStyle(entry.dinnerItems)),
+        cell(`${entry.dayTotal} kcal\nHedef: %${Math.round(entry.ratio * 100)}`, styles.wallDayTotal)
       ]);
 
       const lunchRow = [
@@ -1128,54 +1522,126 @@ function exportExcel() {
 
       lunchRow.push(cell(entry.lunchCal, styles.detailTotalValue));
       dinnerRow.push(cell(entry.dinnerCal, styles.detailTotalValue));
+      lunchRow.push(cell(describeMealAllergens(entry.lunchItems), getAllergenCellStyle(entry.lunchItems)));
+      dinnerRow.push(cell(describeMealAllergens(entry.dinnerItems), getAllergenCellStyle(entry.dinnerItems)));
 
       const totalRowIndex = detailRows.length + 2;
+      const dayItems = [...entry.lunchItems, ...entry.dinnerItems];
+      const dayWarningCount = dayItems.filter(item => getExportAllergenSeverity(item.food) !== 'none').length;
       detailRows.push(
         lunchRow,
         dinnerRow,
         [
           cell(`${sanitizeExcelText(entry.day.dayName)} toplam`, styles.detailTotalLabel),
-          blank(styles.detailTotalLabel),
-          blank(styles.detailTotalLabel),
-          blank(styles.detailTotalLabel),
-          blank(styles.detailTotalLabel),
-          blank(styles.detailTotalLabel),
-          blank(styles.detailTotalLabel),
-          blank(styles.detailTotalLabel),
-          blank(styles.detailTotalLabel),
-          blank(styles.detailTotalLabel),
-          blank(styles.detailTotalLabel),
-          cell(entry.dayTotal, styles.dayTotal)
+          ...Array.from({ length: 10 }, () => blank(styles.detailTotalLabel)),
+          cell(entry.dayTotal, styles.dayTotal),
+          cell(`${dayWarningCount} uyarılı yemek`, getAllergenCellStyle(dayItems))
         ]
       );
       detailMerges.push({ s: { r: totalRowIndex, c: 0 }, e: { r: totalRowIndex, c: 10 } });
     });
 
+    const planHealthRowIndex = planRows.length;
+    planRows.push([
+      cell('Alerjen bilgileri genel bilgilendirme amaçlıdır. Ciddi alerjilerde malzeme listesi, ürün etiketi ve çapraz temas riski ayrıca kontrol edilmelidir.', styles.note),
+      ...Array.from({ length: 5 }, () => blank(styles.note))
+    ]);
+
+    const allergenRows = [
+      [
+        cell('ALERJEN UYARILARI', styles.allergenSheetTitle),
+        ...Array.from({ length: 9 }, () => blank(styles.allergenSheetTitle))
+      ],
+      [
+        cell(`${weekLabel} · Menüdeki ${allergenEntries.length} yemek kaydı · ${unknownAllergenCount} doğrulanmamış profil`, styles.subtitle),
+        ...Array.from({ length: 9 }, () => blank(styles.subtitle))
+      ],
+      [
+        cell('Bu liste genel bilgilendirme amaçlıdır. Tarif, ürün etiketi ve çapraz temas koşulları ayrıca kontrol edilmelidir. Boş alerjen alanları güvenlik garantisi değildir.', styles.allergenLegend),
+        ...Array.from({ length: 9 }, () => blank(styles.allergenLegend))
+      ],
+      Array.from({ length: 10 }, () => blank()),
+      [
+        cell('Gün', styles.header),
+        cell('Tarih', styles.header),
+        cell('Öğün', styles.header),
+        cell('Yemek', styles.header),
+        cell('Porsiyon', styles.header),
+        cell('İÇERİR', styles.allergenHeader),
+        cell('TARİFE GÖRE BULUNABİLİR', styles.allergenHeader),
+        cell('ÇAPRAZ TEMAS', styles.allergenHeader),
+        cell('BİLGİ DURUMU', styles.allergenHeader),
+        cell('TERCİH UYARISI', styles.allergenHeader)
+      ]
+    ];
+    const allergenHeaderRowIndex = 4;
+
+    allergenEntries.forEach(entry => {
+      const info = entry.allergenInfo;
+      const conflict = getAllergenConflictDetails(entry.food, exportPreferences);
+      const conflictIds = normalizeAllergenIds([
+        ...conflict.contains,
+        ...conflict.possibleContains,
+        ...conflict.mayContain
+      ]);
+      const groupText = ids => ids.length
+        ? ids.map(getAllergenLabel).filter(Boolean).join(', ')
+        : 'Kayıt yok';
+      const emptyGroupStyle = info.status === ALLERGEN_INFO_STATUS.unknown
+        ? styles.allergenUnknown
+        : styles.allergenNone;
+      const preferenceText = conflictIds.length
+        ? `⚠ TERCİHLERLE ÇAKIŞIYOR: ${conflictIds.map(getAllergenShortLabel).filter(Boolean).join(', ')}`
+        : info.status === ALLERGEN_INFO_STATUS.unknown
+          ? '? ALERJEN BİLGİSİ DOĞRULANMAMIŞ'
+          : '-';
+
+      allergenRows.push([
+        cell(sanitizeExcelText(entry.day.dayName), styles.dayCell),
+        cell(formatDate(entry.day.date), styles.dateCell),
+        cell(entry.meal, styles.detailMeal),
+        cell(entry.name, styles.detailFood),
+        cell(`${formatPortion(entry.portion)}x`, styles.detailFood),
+        cell(groupText(info.contains), info.contains.length ? styles.allergenContains : emptyGroupStyle),
+        cell(groupText(info.possibleContains), info.possibleContains.length ? styles.allergenPossible : emptyGroupStyle),
+        cell(groupText(info.mayContain), info.mayContain.length ? styles.allergenMayContain : emptyGroupStyle),
+        cell(ALLERGEN_STATUS_LABELS[info.status], getAllergenCellStyle(entry.food)),
+        cell(preferenceText, conflictIds.length ? styles.allergenConflict : getAllergenCellStyle(entry.food))
+      ]);
+    });
+
     const planSheet = xlsx.utils.aoa_to_sheet(planRows);
     planSheet['!cols'] = [
-      { wch: 12 },
-      { wch: 14 },
+      { wch: 16 },
       { wch: 38 },
-      { wch: 11 },
+      { wch: 34 },
       { wch: 38 },
-      { wch: 11 },
-      { wch: 14 },
-      { wch: 10 },
-      { wch: 14 }
+      { wch: 34 },
+      { wch: 16 }
     ];
     planSheet['!rows'] = planRows.map((row, index) => {
-      if (index === 0) return { hpt: 24 };
+      if (index === 0) return { hpt: 28 };
       if (index === 1) return { hpt: 20 };
-      if (index === planHeaderRowIndex) return { hpt: 24 };
-      if (index > planHeaderRowIndex) return { hpt: 56 };
-      return { hpt: 22 };
+      if (index === 2) return { hpt: 26 };
+      if (index === 3) return { hpt: 30 };
+      if (index === planHeaderRowIndex) return { hpt: 28 };
+      if (index === planHealthRowIndex) return { hpt: 30 };
+      if (index > planHeaderRowIndex && index < planHealthRowIndex) return { hpt: 70 };
+      return { hpt: 20 };
     });
     planSheet['!merges'] = [
-      { s: { r: 0, c: 0 }, e: { r: 0, c: 8 } },
-      { s: { r: 1, c: 0 }, e: { r: 1, c: 8 } }
+      { s: { r: 0, c: 0 }, e: { r: 0, c: 5 } },
+      { s: { r: 1, c: 0 }, e: { r: 1, c: 5 } },
+      { s: { r: 3, c: 0 }, e: { r: 3, c: 5 } },
+      { s: { r: planHealthRowIndex, c: 0 }, e: { r: planHealthRowIndex, c: 5 } }
     ];
-    planSheet['!autofilter'] = {
-      ref: xlsx.utils.encode_range({ s: { r: planHeaderRowIndex, c: 0 }, e: { r: planRows.length - 1, c: 8 } })
+    planSheet['!margins'] = {
+      left: 0.2,
+      right: 0.2,
+      top: 0.2,
+      bottom: 0.2,
+      header: 0.1,
+      footer: 0.1
     };
 
     const detailSheet = xlsx.utils.aoa_to_sheet(detailRows);
@@ -1191,22 +1657,60 @@ function exportExcel() {
       { wch: 9 },
       { wch: 24 },
       { wch: 9 },
-      { wch: 13 }
+      { wch: 13 },
+      { wch: 56 }
     ];
     detailSheet['!rows'] = detailRows.map((row, index) => {
       if (index === 0) return { hpt: 24 };
       if (index === 1) return { hpt: 20 };
-      if (index === 3) return { hpt: 24 };
-      if (row[2]?.v === 'Ogle' || row[2]?.v === 'Aksam') return { hpt: 28 };
+      if (index === 2) return { hpt: 34 };
+      if (index === detailHeaderRowIndex) return { hpt: 28 };
+      if (row[2]?.v === 'Ogle' || row[2]?.v === 'Aksam') return { hpt: 110 };
       return { hpt: 22 };
     });
     detailSheet['!merges'] = detailMerges;
     detailSheet['!autofilter'] = {
-      ref: xlsx.utils.encode_range({ s: { r: 3, c: 0 }, e: { r: detailRows.length - 1, c: 11 } })
+      ref: xlsx.utils.encode_range({ s: { r: detailHeaderRowIndex, c: 0 }, e: { r: detailRows.length - 1, c: 12 } })
+    };
+
+    const allergenSheet = xlsx.utils.aoa_to_sheet(allergenRows);
+    allergenSheet['!cols'] = [
+      { wch: 12 },
+      { wch: 14 },
+      { wch: 10 },
+      { wch: 28 },
+      { wch: 10 },
+      { wch: 28 },
+      { wch: 30 },
+      { wch: 26 },
+      { wch: 30 },
+      { wch: 38 }
+    ];
+    allergenSheet['!rows'] = allergenRows.map((row, index) => {
+      if (index === 0) return { hpt: 26 };
+      if (index === 1) return { hpt: 20 };
+      if (index === 2) return { hpt: 34 };
+      if (index === allergenHeaderRowIndex) return { hpt: 30 };
+      if (index > allergenHeaderRowIndex) return { hpt: 42 };
+      return { hpt: 20 };
+    });
+    allergenSheet['!merges'] = [
+      { s: { r: 0, c: 0 }, e: { r: 0, c: 9 } },
+      { s: { r: 1, c: 0 }, e: { r: 1, c: 9 } },
+      { s: { r: 2, c: 0 }, e: { r: 2, c: 9 } }
+    ];
+    allergenSheet['!autofilter'] = {
+      ref: xlsx.utils.encode_range({ s: { r: allergenHeaderRowIndex, c: 0 }, e: { r: allergenRows.length - 1, c: 9 } })
     };
 
     xlsx.utils.book_append_sheet(workbook, planSheet, 'Plan');
+    xlsx.utils.book_append_sheet(workbook, allergenSheet, 'Alerjenler');
     xlsx.utils.book_append_sheet(workbook, detailSheet, 'Detay');
+    workbook.Workbook = workbook.Workbook || {};
+    workbook.Workbook.Names = [
+      ...(workbook.Workbook.Names || []).filter(name => name.Name !== '_xlnm.Print_Area' || name.Sheet !== 0),
+      { Name: '_xlnm.Print_Area', Sheet: 0, Ref: `'Plan'!$A$1:$F$${planRows.length}` }
+    ];
     xlsx.writeFile(workbook, `menu_${currentWeek.startDate}.xlsx`, { bookType: 'xlsx', compression: true });
     showToast('Excel olarak indirildi', 'success');
     return;
@@ -1218,9 +1722,18 @@ function exportExcel() {
     title: 'background:#d97016;color:#fff;font-size:16pt;font-weight:bold;font-family:Calibri;text-align:center;padding:12px;',
     subtitle: 'background:#f5f1ea;color:#6b5f50;font-size:10pt;font-family:Calibri;text-align:center;padding:6px;',
     colHead: 'background:#2c2418;color:#faf8f4;font-size:9pt;font-weight:bold;font-family:Calibri;text-align:center;padding:6px 8px;border:1px solid #1a1610;',
+    allergenHead: 'background:#9f2d28;color:#fff;font-size:9pt;font-weight:bold;font-family:Calibri;text-align:center;padding:7px 8px;border:1px solid #7e231f;',
+    allergenNotice: 'background:#fff7d6;color:#755b00;font-size:9pt;font-weight:bold;font-family:Calibri;text-align:left;padding:8px 10px;border:1px solid #e5cf72;',
     dayCell: 'background:#e8940b;color:#fff;font-size:11pt;font-weight:bold;font-family:Calibri;padding:6px 10px;border:1px solid #c2610a;vertical-align:middle;',
     mealCell: 'font-size:9pt;font-weight:bold;font-family:Calibri;padding:5px 8px;text-align:center;vertical-align:middle;',
     foodCell: 'font-size:10pt;font-family:Calibri;padding:4px 8px;',
+    allergenCell: 'font-size:9pt;font-family:Calibri;padding:7px 9px;vertical-align:top;line-height:1.45;',
+    allergenConflict: 'background:#fde8e7;color:#9f2d28;font-weight:bold;border-left:4px solid #9f2d28;',
+    allergenContains: 'background:#fde8e7;color:#9f2d28;font-weight:bold;',
+    allergenPossible: 'background:#fff0da;color:#a85800;font-weight:bold;',
+    allergenMayContain: 'background:#fff7d6;color:#755b00;font-weight:bold;',
+    allergenUnknown: 'background:#eceff1;color:#59636b;font-weight:bold;',
+    allergenNone: 'background:#f4f6f5;color:#6b5f50;',
     calCell: 'font-size:10pt;font-family:Calibri;padding:4px 6px;text-align:right;color:#b85c0a;font-weight:bold;',
     mealTot: 'font-size:10pt;font-family:Calibri;font-weight:bold;padding:4px 8px;text-align:right;',
     dayTot: 'background:#fdf6e8;font-size:10pt;font-family:Calibri;font-weight:bold;padding:6px 8px;border:1px solid #e0d8cc;',
@@ -1238,98 +1751,110 @@ function exportExcel() {
   function foodInfo(foodId, portions, index) {
     const food = foodId ? getFoodById(foodId) : null;
     const portion = (portions && portions[index]) || 1;
-    if (!food) return { name: '', cal: 0 };
+    if (!food) return { name: '', rawName: '', cal: 0, food: null, allergenInfo: null };
 
     const calories = Math.round(food.calories * portion);
     const portionText = portion !== 1 ? ` (${portion}x)` : '';
 
     return {
-      name: sanitizeExcelText(food.name + portionText),
-      cal: calories
+      name: escapeHtml(sanitizeExcelText(food.name + portionText)),
+      rawName: food.name + portionText,
+      cal: calories,
+      food,
+      allergenInfo: getFoodAllergenInfo(food)
     };
   }
 
-  let html = `<html xmlns:o="urn:schemas-microsoft-com:office:office" xmlns:x="urn:schemas-microsoft-com:office:excel" xmlns="http://www.w3.org/TR/REC-html40">
-<head><meta charset="utf-8">
-<!--[if gte mso 9]><xml><x:ExcelWorkbook><x:ExcelWorksheets><x:ExcelWorksheet>
-<x:Name>Haftalık Menü</x:Name>
-<x:WorksheetOptions><x:DisplayGridlines/><x:FitToPage/><x:Print><x:FitWidth>1</x:FitWidth></x:Print></x:WorksheetOptions>
-</x:ExcelWorksheet></x:ExcelWorksheets></x:ExcelWorkbook></xml><![endif]-->
-</head><body>
-<table border="0" cellpadding="0" cellspacing="0">`;
+  function formatAllergenHtml(food) {
+    if (!food) return '';
+    return escapeHtml(sanitizeExcelText(formatCompactFoodAllergenWarning(food)))
+      .replace(/\n/g, '<br>');
+  }
 
-  html += `<tr><td colspan="11" style="${styles.title}">HAFTALIK YEMEK MENÜSÜ</td></tr>`;
-  html += `<tr><td colspan="11" style="${styles.subtitle}">${sanitizeExcelText(currentWeek.label || currentWeekId)} · Günlük Hedef: ${goal} kcal</td></tr>`;
-  html += `<tr><td colspan="11" style="${styles.empty}">&nbsp;</td></tr>`;
+  function formatWallMealHtml(items, mealTotal) {
+    const withFood = items.filter(item => item.food);
+    if (!withFood.length) return '&mdash;';
+    const foods = withFood.map((item, index) => (
+      `${index + 1}. ${item.name} <span style="color:#b85c0a;font-weight:bold">· ${item.cal} kcal</span>`
+    ));
+    foods.push(`<strong>Öğün toplamı: ${mealTotal} kcal</strong>`);
+    return foods.join('<br>');
+  }
 
-  html += `<tr>
-    <td style="${styles.colHead}" width="100">GÜN</td>
-    <td style="${styles.colHead}" width="65">ÖĞÜN</td>
-    <td style="${styles.colHead}" width="180">1. Yemek</td>
-    <td style="${styles.colHead}" width="55">kcal</td>
-    <td style="${styles.colHead}" width="180">2. Yemek</td>
-    <td style="${styles.colHead}" width="55">kcal</td>
-    <td style="${styles.colHead}" width="180">3. Yemek</td>
-    <td style="${styles.colHead}" width="55">kcal</td>
-    <td style="${styles.colHead}" width="180">4. Yemek</td>
-    <td style="${styles.colHead}" width="55">kcal</td>
-    <td style="${styles.colHead}" width="80">TOPLAM</td>
-  </tr>`;
+  function formatMealAllergenHtml(items) {
+    const withFood = items.filter(item => item.food);
+    if (!withFood.length) return '&mdash;';
+    const warningItems = withFood.filter(item => getExportAllergenSeverity(item.food) !== 'none');
+    if (!warningItems.length) return 'Kayıtlı profilde alerjen uyarısı bulunmuyor';
+    return warningItems.map(item => `<strong>${item.name}</strong><br>${formatAllergenHtml(item.food)}`).join('<br><br>');
+  }
 
-  let weekTotal = 0;
+  function getHtmlAllergenCellStyle(items) {
+    return {
+      conflict: styles.allergenConflict,
+      contains: styles.allergenContains,
+      possible: styles.allergenPossible,
+      mayContain: styles.allergenMayContain,
+      unknown: styles.allergenUnknown,
+      none: styles.allergenNone
+    }[getMealAllergenSeverity(items)];
+  }
 
-  currentWeek.days.forEach((day, dayIndex) => {
+  const htmlDayExports = currentWeek.days.map((day, dayIndex) => {
     if (!day.lunchPortions) day.lunchPortions = [1, 1, 1, 1];
     if (!day.dinnerPortions) day.dinnerPortions = [1, 1, 1, 1];
-
-    const bgRow = rowColor(dayIndex);
     const lunchItems = [0, 1, 2, 3].map(index => foodInfo(day.lunch[index], day.lunchPortions, index));
     const dinnerItems = [0, 1, 2, 3].map(index => foodInfo(day.dinner[index], day.dinnerPortions, index));
     const lunchCal = lunchItems.reduce((sum, item) => sum + item.cal, 0);
     const dinnerCal = dinnerItems.reduce((sum, item) => sum + item.cal, 0);
     const dayTotal = lunchCal + dinnerCal;
     const pct = goal > 0 ? Math.round((dayTotal / goal) * 100) : 0;
-    const pctStyle = pct > 100 ? styles.pctOver : pct > 85 ? styles.pctWarn : styles.pctOk;
-
-    weekTotal += dayTotal;
-
-    html += `<tr>
-      <td rowspan="2" style="${styles.dayCell}">${sanitizeExcelText(day.dayName)}<br><span style="font-size:8pt;font-weight:normal">${sanitizeExcelText(formatDate(day.date))}</span></td>
-      <td style="${styles.mealCell}${bgRow}border:1px solid #e0d8cc;">Öğle</td>`;
-    lunchItems.forEach(item => {
-      html += `<td style="${styles.foodCell}${bgRow}${styles.border}">${item.name || '&mdash;'}</td>`;
-      html += `<td style="${styles.calCell}${bgRow}${styles.border}">${item.cal || ''}</td>`;
-    });
-    html += `<td style="${styles.mealTot}${bgRow}${styles.border}color:#b85c0a;">${lunchCal}</td></tr>`;
-
-    html += `<tr>
-      <td style="${styles.mealCell}${bgRow}border:1px solid #e0d8cc;">Akşam</td>`;
-    dinnerItems.forEach(item => {
-      html += `<td style="${styles.foodCell}${bgRow}${styles.border}">${item.name || '&mdash;'}</td>`;
-      html += `<td style="${styles.calCell}${bgRow}${styles.border}">${item.cal || ''}</td>`;
-    });
-    html += `<td style="${styles.mealTot}${bgRow}${styles.border}color:#b85c0a;">${dinnerCal}</td></tr>`;
-
-    html += `<tr>
-      <td colspan="9" style="${styles.dayTot}text-align:right;">${sanitizeExcelText(day.dayName)} Toplam</td>
-      <td style="${pctStyle}${styles.border}">%${pct}</td>
-      <td style="${styles.dayTot}text-align:center;color:#b85c0a;font-size:11pt;">${dayTotal} kcal</td>
-    </tr>`;
-
-    html += `<tr><td colspan="11" style="${styles.empty};height:4px"></td></tr>`;
+    return { day, dayIndex, lunchItems, dinnerItems, lunchCal, dinnerCal, dayTotal, pct };
   });
 
+  const weekTotal = htmlDayExports.reduce((sum, entry) => sum + entry.dayTotal, 0);
   const avgDaily = Math.round(weekTotal / 7);
-  const daysWithFood = currentWeek.days.filter(day => calcDayCalories(day) > 0).length;
-  const activeAvg = daysWithFood > 0 ? Math.round(weekTotal / daysWithFood) : 0;
 
-  html += `<tr><td colspan="11" style="${styles.empty}">&nbsp;</td></tr>`;
-  html += `<tr><td colspan="9" style="${styles.summLabel}">HAFTALIK TOPLAM</td><td colspan="2" style="${styles.summVal}">${weekTotal} kcal</td></tr>`;
-  html += `<tr><td colspan="9" style="${styles.summLabel}">GÜNLÜK ORTALAMA (7 gün)</td><td colspan="2" style="${styles.summVal}">${avgDaily} kcal</td></tr>`;
-  if (daysWithFood > 0 && daysWithFood < 7) {
-    html += `<tr><td colspan="9" style="${styles.summLabel}">GÜNLÜK ORTALAMA (${daysWithFood} aktif gün)</td><td colspan="2" style="${styles.summVal}">${activeAvg} kcal</td></tr>`;
-  }
-  html += `<tr><td colspan="9" style="${styles.summLabel}">GÜNLÜK HEDEF</td><td colspan="2" style="${styles.summVal}">${goal} kcal</td></tr>`;
+  let html = `<html xmlns:o="urn:schemas-microsoft-com:office:office" xmlns:x="urn:schemas-microsoft-com:office:excel" xmlns="http://www.w3.org/TR/REC-html40">
+<head><meta charset="utf-8"><style>@page { size: A4 landscape; margin: 8mm; } table { border-collapse: collapse; }</style>
+<!--[if gte mso 9]><xml><x:ExcelWorkbook><x:ExcelWorksheets><x:ExcelWorksheet>
+<x:Name>Haftalık Menü</x:Name>
+<x:WorksheetOptions><x:PageSetup><x:Layout x:Orientation="Landscape"/></x:PageSetup><x:DisplayGridlines/><x:FitToPage/><x:Print><x:FitWidth>1</x:FitWidth><x:FitHeight>1</x:FitHeight></x:Print></x:WorksheetOptions>
+</x:ExcelWorksheet></x:ExcelWorksheets></x:ExcelWorkbook></xml><![endif]-->
+</head><body>
+<table border="0" cellpadding="0" cellspacing="0">`;
+
+  html += `<tr><td colspan="6" style="${styles.title}">HAFTALIK MENÜ</td></tr>`;
+  html += `<tr><td colspan="6" style="${styles.subtitle}">${escapeHtml(sanitizeExcelText(currentWeek.label || currentWeekId))}</td></tr>`;
+  html += `<tr>
+    <td style="${styles.summLabel}">HAFTALIK TOPLAM</td><td style="${styles.summVal}">${weekTotal} kcal</td>
+    <td style="${styles.summLabel}">GÜNLÜK ORTALAMA</td><td style="${styles.summVal}">${avgDaily} kcal</td>
+    <td style="${styles.summLabel}">GÜNLÜK HEDEF</td><td style="${styles.summVal}">${goal} kcal</td>
+  </tr>`;
+  html += `<tr><td colspan="6" style="${styles.allergenNotice}">ALERJEN: [İÇERİR] kırmızı · [OLABİLİR] turuncu · [ÇAPRAZ TEMAS] sarı · [BİLGİ YOK] gri</td></tr>`;
+  html += `<tr>
+    <td style="${styles.colHead}" width="110">GÜN / TARİH</td>
+    <td style="${styles.colHead}" width="270">ÖĞLE MENÜSÜ</td>
+    <td style="${styles.allergenHead}" width="230">ÖĞLE ALERJEN UYARISI / BİLGİSİ</td>
+    <td style="${styles.colHead}" width="270">AKŞAM MENÜSÜ</td>
+    <td style="${styles.allergenHead}" width="230">AKŞAM ALERJEN UYARISI / BİLGİSİ</td>
+    <td style="${styles.colHead}" width="110">GÜNLÜK TOPLAM</td>
+  </tr>`;
+
+  htmlDayExports.forEach(entry => {
+    const bgRow = rowColor(entry.dayIndex);
+    const pctStyle = entry.pct > 100 ? styles.pctOver : entry.pct > 85 ? styles.pctWarn : styles.pctOk;
+    html += `<tr>
+      <td style="${styles.dayCell}">${escapeHtml(sanitizeExcelText(entry.day.dayName))}<br><span style="font-size:8pt;font-weight:normal">${escapeHtml(sanitizeExcelText(formatDate(entry.day.date)))}</span></td>
+      <td style="${styles.foodCell}${bgRow}${styles.border}vertical-align:top;line-height:1.45;">${formatWallMealHtml(entry.lunchItems, entry.lunchCal)}</td>
+      <td style="${styles.allergenCell}${styles.border}${getHtmlAllergenCellStyle(entry.lunchItems)}">${formatMealAllergenHtml(entry.lunchItems)}</td>
+      <td style="${styles.foodCell}${bgRow}${styles.border}vertical-align:top;line-height:1.45;">${formatWallMealHtml(entry.dinnerItems, entry.dinnerCal)}</td>
+      <td style="${styles.allergenCell}${styles.border}${getHtmlAllergenCellStyle(entry.dinnerItems)}">${formatMealAllergenHtml(entry.dinnerItems)}</td>
+      <td style="${styles.dayTot}${pctStyle}${styles.border}font-size:11pt;text-align:center;">${entry.dayTotal} kcal<br><span style="font-size:8pt">Hedef: %${entry.pct}</span></td>
+    </tr>`;
+  });
+
+  html += `<tr><td colspan="6" style="${styles.allergenNotice}">Alerjen bilgileri genel bilgilendirme amaçlıdır. Ciddi alerjilerde malzeme listesi, ürün etiketi ve çapraz temas riski ayrıca kontrol edilmelidir.</td></tr>`;
   html += '</table></body></html>';
 
   downloadBlob(new Blob([BOM + html], { type: 'application/vnd.ms-excel;charset=utf-8' }), `menu_${currentWeek.startDate}.xls`);
@@ -1357,6 +1882,7 @@ function importWeek() {
       const summary = [];
       if (result.importedCustomFoods) summary.push(`${result.importedCustomFoods} özel yemek`);
       if (result.importedOverrides) summary.push(`${result.importedOverrides} kalori override`);
+      if (result.importedAllergenOverrides) summary.push(`${result.importedAllergenOverrides} alerjen override`);
       showToast(summary.length ? `Menü içe aktarıldı (${summary.join(', ')})` : 'Menü içe aktarıldı', 'success');
     };
     reader.readAsText(file);
@@ -1391,6 +1917,25 @@ function renderWeeksList() {
     </div>`).join('');
 }
 
+function matchesFoodAllergenFilter(food) {
+  const mode = foodMgmtFilter.allergenMode;
+  const allergenId = foodMgmtFilter.allergenId;
+  if (!mode || mode === 'all') return true;
+
+  const info = getFoodAllergenInfo(food);
+  if (mode === 'unknown') return info.status === ALLERGEN_INFO_STATUS.unknown;
+  if (mode === 'conflict') {
+    const details = getAllergenConflictDetails(food, getCurrentAllergenPreferences());
+    return details.contains.length > 0 || details.possibleContains.length > 0 || details.mayContain.length > 0;
+  }
+  if (mode === 'profileWithout') {
+    if (!allergenId || info.status === ALLERGEN_INFO_STATUS.unknown) return false;
+    return ![...info.contains, ...info.possibleContains, ...info.mayContain].includes(allergenId);
+  }
+  if (!allergenId || !['contains', 'possibleContains', 'mayContain'].includes(mode)) return false;
+  return info[mode].includes(allergenId);
+}
+
 function renderFoodList() {
   const allFoods = getAllFoods();
   let filteredFoods = allFoods;
@@ -1403,6 +1948,8 @@ function renderFoodList() {
     const normalizedQuery = normalizeTurkish(foodMgmtFilter.query.toLowerCase());
     filteredFoods = filteredFoods.filter(food => normalizeTurkish(food.name.toLowerCase()).includes(normalizedQuery));
   }
+
+  filteredFoods = filteredFoods.filter(matchesFoodAllergenFilter);
 
   filteredFoods = [...filteredFoods].sort((a, b) => a.name.localeCompare(b.name, 'tr'));
 
@@ -1422,6 +1969,7 @@ function renderFoodList() {
   });
 
   const overrides = Storage.getCalorieOverrides();
+  const allergenOverrides = Storage.getAllergenOverrides();
   let html = '';
 
   Object.keys(FOOD_CATEGORIES).forEach(categoryKey => {
@@ -1440,16 +1988,25 @@ function renderFoodList() {
     foods.forEach(food => {
       const isCustom = food.isCustom || isCustomFood(food.id);
       const isOverridden = overrides[food.id] !== undefined && !isCustom;
+      const isAllergenOverridden = allergenOverrides[food.id] !== undefined && !isCustom;
       const originalCalories = isOverridden ? getOriginalCalories(food.id) : null;
       const isFavorite = Storage.isFavorite(food.id);
       const foodIdArg = toInlineHandlerArg(food.id);
+      const editorId = getFoodAllergenEditorId(food.id);
+      const isEditingAllergens = editingAllergenFoodId === food.id;
+      const editorActions = `<div class="allergen-editor-actions">
+        <button class="btn btn-sm btn-primary" type="button" onclick="saveFoodAllergenInfo(${foodIdArg})">Kaydet</button>
+        <button class="btn btn-sm" type="button" onclick="toggleAllergenEditor(${foodIdArg})">İptal</button>
+        ${isAllergenOverridden ? `<button class="btn btn-sm" type="button" onclick="resetFoodAllergenInfo(${foodIdArg})">Orijinal alerjen profiline dön</button>` : ''}
+      </div>`;
 
       html += `
         <div class="food-mgmt-item">
           <div class="food-mgmt-name-col">
             <span class="food-mgmt-name">${escapeHtml(food.name)}</span>
             ${isCustom ? '<span class="food-mgmt-badge custom">Özel</span>' : ''}
-            ${isOverridden ? '<span class="food-mgmt-badge edited">Düzenlendi</span>' : ''}
+            ${isOverridden ? '<span class="food-mgmt-badge edited">Kalori düzenlendi</span>' : ''}
+            ${isAllergenOverridden ? '<span class="food-mgmt-badge allergen-edited">Alerjen düzenlendi</span>' : ''}
           </div>
           <span class="food-mgmt-portion">${escapeHtml(food.portion)}</span>
           <div class="food-mgmt-cal-edit">
@@ -1461,8 +2018,11 @@ function renderFoodList() {
           </div>
           <div class="food-mgmt-actions">
             <button class="food-mgmt-fav ${isFavorite ? 'active' : ''}" onclick="toggleMgmtFav(${foodIdArg})" title="Favori">&#9733;</button>
+            <button class="food-mgmt-allergen-edit" type="button" onclick="toggleAllergenEditor(${foodIdArg})" title="Alerjen bilgisini düzenle">Alerjenleri düzenle</button>
             ${isCustom ? `<button class="food-mgmt-del" onclick="deleteFood(${foodIdArg})" title="Sil">&#128465;</button>` : ''}
           </div>
+          <div class="food-mgmt-allergen-col">${renderFoodAllergenSummary(food)}</div>
+          ${isEditingAllergens ? `<div id="${escapeHtml(editorId)}" class="allergen-editor allergen-editor-inline">${getAllergenEditorMarkup(editorId, getFoodAllergenInfo(food), editorActions)}</div>` : ''}
         </div>`;
     });
 
@@ -1497,10 +2057,45 @@ function resetFoodCalorie(foodId) {
   showToast('Orijinal değere döndürüldü', 'info');
 }
 
+function toggleAllergenEditor(foodId) {
+  editingAllergenFoodId = editingAllergenFoodId === foodId ? null : foodId;
+  renderFoodList();
+}
+
+function saveFoodAllergenInfo(foodId) {
+  const food = getFoodById(foodId);
+  if (!food) return;
+  const editorId = getFoodAllergenEditorId(foodId);
+  const allergenInfo = getAllergenInfoFromEditor(editorId);
+  const isCustom = food.isCustom || isCustomFood(foodId);
+  const saved = isCustom
+    ? Storage.updateCustomFood(foodId, { allergenInfo })
+    : Storage.setAllergenOverride(foodId, allergenInfo);
+
+  if (!saved) {
+    showToast('Alerjen bilgisi kaydedilemedi', 'error');
+    return;
+  }
+
+  editingAllergenFoodId = null;
+  renderFoodList();
+  renderWeek();
+  showToast('Alerjen bilgisi kaydedildi', 'success');
+}
+
+function resetFoodAllergenInfo(foodId) {
+  if (!Storage.removeAllergenOverride(foodId)) return;
+  editingAllergenFoodId = null;
+  renderFoodList();
+  renderWeek();
+  showToast('Orijinal alerjen profiline dönüldü', 'info');
+}
+
 function deleteFood(foodId) {
   if (!confirm('Bu yemeği silmek istediğinize emin misiniz?')) return;
 
   clearTimeout(saveTimeout);
+  if (editingAllergenFoodId === foodId) editingAllergenFoodId = null;
   Storage.deleteCustomFood(foodId);
   const refreshedWeek = Storage.getWeek(currentWeekId);
   if (refreshedWeek) currentWeek = refreshedWeek;
@@ -1542,12 +2137,14 @@ function saveNewFood() {
     return;
   }
 
-  Storage.addCustomFood({ name, calories, category: safeCategory, portion });
+  const allergenInfo = getAllergenInfoFromEditor('new-food-allergen-editor');
+  Storage.addCustomFood({ name, calories, category: safeCategory, portion, allergenInfo });
   DOM.foodAddForm.classList.add('hidden');
 
   document.getElementById('new-food-name').value = '';
   document.getElementById('new-food-cal').value = '';
   document.getElementById('new-food-portion').value = '';
+  renderNewFoodAllergenEditor();
 
   renderFoodList();
   showToast(`"${name}" eklendi`, 'success');
@@ -1582,7 +2179,7 @@ function autoFillWeek() {
   renderWeek();
   updateStats();
   const filledDayCount = currentWeek.days.filter(autoFillHasAnyFood).length || 1;
-  showToast(`Hafta örnek menü paternine göre dolduruldu! Günlük ort: ${Math.round(calcWeekCalories() / filledDayCount)} kcal`, 'success');
+  showAutoFillResult(context, currentWeek.days, `Hafta örnek menü paternine göre dolduruldu! Günlük ort: ${Math.round(calcWeekCalories() / filledDayCount)} kcal`);
 }
 
 function clearWeekMeals() {
@@ -1633,35 +2230,54 @@ function autoFillDay(dayIndex) {
   autoSave();
   renderWeek();
   updateStats();
-  showToast(`${day.dayName} dolduruldu! (${calcDayCalories(day)} kcal)`, 'success');
+  showAutoFillResult(context, [day], `${day.dayName} dolduruldu! (${calcDayCalories(day)} kcal)`);
 }
 
 function createAutoFillContext() {
   const allFoods = getAllFoods();
+  const preferences = getCurrentAllergenPreferences();
+  const eligibleFoods = allFoods.filter(food => isFoodAllowedByAllergenPreferences(food, preferences));
   return {
+    preferences,
+    excludedFoodCount: allFoods.length - eligibleFoods.length,
     pools: {
-      soups: allFoods.filter(autoFillIsSoup),
-      meatMains: allFoods.filter(autoFillIsMeatMain),
-      vegetableMains: allFoods.filter(autoFillIsVegetableMain),
-      legumeMains: allFoods.filter(autoFillIsLegumeMain),
-      breadMains: allFoods.filter(autoFillIsBreadMain),
-      singlePlateMains: allFoods.filter(autoFillIsSinglePlateMain),
-      grainSides: allFoods.filter(autoFillIsGrainSide),
-      pastaSides: allFoods.filter(autoFillIsPastaSide),
-      borekSides: allFoods.filter(autoFillIsBorekSide),
-      potatoSides: allFoods.filter(autoFillIsPotatoSide),
-      vegetableSides: allFoods.filter(autoFillIsVegetableSide),
-      saladSides: allFoods.filter(autoFillIsSaladSide),
-      pickleSides: allFoods.filter(autoFillIsPickleSide),
-      dairySides: allFoods.filter(autoFillIsDairySide),
-      drinkSides: allFoods.filter(autoFillIsDrinkSide),
-      dessertSides: allFoods.filter(autoFillIsDessertSide),
-      fruitSides: allFoods.filter(autoFillIsFruitSide)
+      soups: eligibleFoods.filter(autoFillIsSoup),
+      meatMains: eligibleFoods.filter(autoFillIsMeatMain),
+      vegetableMains: eligibleFoods.filter(autoFillIsVegetableMain),
+      legumeMains: eligibleFoods.filter(autoFillIsLegumeMain),
+      breadMains: eligibleFoods.filter(autoFillIsBreadMain),
+      singlePlateMains: eligibleFoods.filter(autoFillIsSinglePlateMain),
+      grainSides: eligibleFoods.filter(autoFillIsGrainSide),
+      pastaSides: eligibleFoods.filter(autoFillIsPastaSide),
+      borekSides: eligibleFoods.filter(autoFillIsBorekSide),
+      potatoSides: eligibleFoods.filter(autoFillIsPotatoSide),
+      vegetableSides: eligibleFoods.filter(autoFillIsVegetableSide),
+      saladSides: eligibleFoods.filter(autoFillIsSaladSide),
+      pickleSides: eligibleFoods.filter(autoFillIsPickleSide),
+      dairySides: eligibleFoods.filter(autoFillIsDairySide),
+      drinkSides: eligibleFoods.filter(autoFillIsDrinkSide),
+      dessertSides: eligibleFoods.filter(autoFillIsDessertSide),
+      fruitSides: eligibleFoods.filter(autoFillIsFruitSide)
     },
     used: {
       exact: new Set()
     }
   };
+}
+
+function countAutoFillEmptySlots(days) {
+  return days
+    .filter(day => !autoFillIsSunday(day))
+    .reduce((total, day) => total + day.lunch.filter(id => !id).length + day.dinner.filter(id => !id).length, 0);
+}
+
+function showAutoFillResult(context, days, successMessage) {
+  const emptySlots = countAutoFillEmptySlots(days);
+  if (context.excludedFoodCount > 0 && emptySlots > 0) {
+    showToast(`Seçtiğiniz alerjen kısıtlamalarına uygun yeterli yemek bulunamadı. Bazı öğünler boş bırakıldı. (${emptySlots} slot)`, 'warning');
+    return;
+  }
+  showToast(successMessage, 'success');
 }
 
 function autoFillSeedContext(context, skipDayIndex) {
@@ -1985,7 +2601,7 @@ function formatDate(dateStr) {
 }
 
 function showToast(message, type = 'info') {
-  const icons = { success: '✅', error: '❌', info: 'ℹ️' };
+  const icons = { success: '✅', error: '❌', info: 'ℹ️', warning: '⚠️' };
   const toast = document.createElement('div');
   toast.className = `toast ${type}`;
 

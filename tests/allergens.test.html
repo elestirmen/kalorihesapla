@@ -1,0 +1,57 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Alerjen Testleri</title>
+  <link rel="stylesheet" href="../css/style.css">
+  <style>
+    body { padding: 24px; }
+    .test-shell { max-width: 980px; margin: 0 auto; }
+    .test-results { display: grid; gap: 8px; margin-top: 16px; }
+    .test-result { padding: 10px 12px; border: 1px solid var(--border); border-radius: 8px; background: var(--bg-surface); }
+    .test-result.pass { border-left: 4px solid var(--success); }
+    .test-result.fail { border-left: 4px solid var(--danger); }
+    .test-summary { color: var(--text-secondary); }
+    .test-host { display: none; }
+  </style>
+</head>
+<body>
+  <main class="test-shell">
+    <h1>Alerjen Yönetimi Testleri</h1>
+    <p class="test-summary" id="test-summary">Testler hazırlanıyor...</p>
+    <div class="test-results" id="test-results" aria-live="polite"></div>
+  </main>
+
+  <!-- app.js için görünmeyen, gerçek DOM hedefleri -->
+  <div class="test-host" aria-hidden="true">
+    <div id="menu-grid"></div><input id="search-input"><div id="search-results"></div><div id="search-context"></div>
+    <div id="search-overlay"></div><span id="week-label"></span><input id="week-date-input"><div id="toast-container"></div>
+    <span id="stat-weekly-cal">0</span><span id="stat-daily-cal">0</span><span id="stat-meal-count"></span><span id="stat-food-count"></span>
+    <div id="weeks-dropdown"></div><div id="weeks-list"></div><input id="goal-input"><div id="tab-planner"></div><div id="tab-foods"></div>
+    <div id="planner-controls"></div><div id="planner-actions"></div>
+    <input id="food-mgmt-search"><div id="food-mgmt-list"></div><div id="food-add-form"></div><span id="food-total-count"></span>
+    <div id="allergen-preferences-grid"></div><input id="pref-possible-unsafe" type="checkbox"><input id="pref-may-contain-unsafe" type="checkbox"><input id="pref-exclude-unknown" type="checkbox">
+    <span id="allergen-settings-summary-value"></span><select id="food-category-filter"><option value="all">all</option></select>
+    <div id="new-food-allergen-editor" class="allergen-editor"></div><select id="food-allergen-filter-id"></select><select id="food-allergen-filter-mode"><option value="all">all</option></select>
+  </div>
+
+  <script>
+    window.__allergenTestKeys = [
+      'kalori_haftalik_menuler', 'kalori_ayarlar', 'kalori_custom_foods',
+      'kalori_favorites', 'kalori_calorie_overrides', 'kalori_allergen_overrides'
+    ];
+    window.__allergenTestSnapshot = Object.fromEntries(
+      window.__allergenTestKeys.map(key => [key, localStorage.getItem(key)])
+    );
+    window.__allergenTestErrors = [];
+    window.addEventListener('error', event => window.__allergenTestErrors.push(event.message || String(event.error || 'Bilinmeyen hata')));
+  </script>
+  <script src="../js/allergens.js"></script>
+  <script src="../js/data.js"></script>
+  <script src="../js/storage.js"></script>
+  <script src="../js/xlsx-js-style.min.js"></script>
+  <script src="../js/app.js"></script>
+  <script src="allergens.test.js"></script>
+</body>
+</html>
