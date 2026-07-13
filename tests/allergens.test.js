@@ -1,5 +1,6 @@
 (function () {
   const ORIGINAL_BASE_FOOD_IDS = `tarhana_corbasi,mercimek_corbasi,suzme_mercimek_corbasi,ezogelin_corbasi,toyga_corbasi,lebeniye_corbasi,yayla_corbasi,mantar_corbasi_kremali,mantar_corbasi,domates_corbasi,brokoli_corbasi,kremali_sebze_corbasi,sebze_corbasi,havuclu_kremali_corba,tavuk_suyu_corbasi,tavuk_corbasi,sehriyeli_tavuk_corbasi,tel_sehriye_corbasi,sehriye_corbasi,mahluta_corbasi,iskembe_corbasi,tutmac_corbasi,dugun_corbasi,firinda_sebzeli_tavuk_sarma,firinda_sebzeli_tavuk,baharatli_tavuk_sis,tavuk_tantuni,tavuklu_bezelye,tavuk_doner,izgara_tavuk_kanat,tavuk_but,tavuklu_saray_sarma,tavuk_sote,tavuk_kagit_kebabi,tavuk_kulbasti_begendi,tavuk_sinitzel,tavuk_fajita,firin_tavuk_baget,ekmek_arasi_tantuni,inegol_kofte,kadinbudu_kofte,hasanpasa_kofte,ciftlik_kebabi,sebzeli_kebap,tas_kebabi,orman_kebabi,sac_tava,belen_tava,hunkar_begendi,etli_mevsim_turlusu,et_sote,kofte_izgara,kiymali_patates_oturtma,kiymali_yesil_mercimek,kiymali_kopoglu,kiymali_bezelye,kiymali_semizotu,mantu,ispanakli_cilbir,firinda_kofte,guvec,kuzu_tandir,coban_kavurma,alman_usulu_patates,kuru_fasulye,patlican_musakka,barbunya_pilaki,zeytinyagli_barbunya,yesil_mercimek_yemegi,zeytinyagli_pirasa,ispanak_graten,zeytinyagli_ispanak,zeytinyagli_kabak,zeytinyagli_taze_fasulye,zeytinyagli_karisik_kizartma,karnabahar_graten,firinda_sebzeler,sebze_turlu,imam_bayildi,biber_dolmasi,kabak_dolmasi,yaprak_sarmasi,nohut_yemegi,etli_nohut,sebzeli_patates_oturtma,patates_puresi,elma_dilim_patates,piyaz,zeytinyagli_enginar,zeytinyagli_kereviz,pirinc_pilavi,sade_pirinc_pilavi,sebzeli_pirinc_pilavi,bulgur_pilavi,siyez_bulgur_pilavi,sehriyeli_siyez_bulgur,sebzeli_bulgur_pilavi,firik_pilavi,domatesli_sebzeli_pilav,meyhane_pilavi,havuclu_arpa_sehriye,sehriyeli_pirinc_pilavi,ic_pilav,nohutlu_pilav,sebzeli_siyez_bulgur_pilavi,domates_soslu_penne,makarna_sade,peynirli_tam_bugday_makarna,domates_soslu_spagetti,yogurtlu_makarna,cevizli_eriste,sebzeli_eriste,peynirli_eriste,domatesli_makarna,firin_makarna,peynirli_borek,ispanakli_borek,su_boregi,kiymali_borek,patatesli_borek,sigara_boregi,gozleme,mevsim_salatasi,mevsim_salatasi_yogurt,akdeniz_salatasi,gavurdagi_salatasi,meksika_fasulye_salata,sumakli_sogan_salatasi,coleslaw_salatasi,cacik,coban_salatasi,sogus_salatasi,yesil_salata,kis_patates_salatasi,pancar_tursusu,karisik_tursu,yesillik,ayran,yogurt,az_sekerli_komposto,salgam,limonata,su,sutlac,baklava,kazandibi,keskul,supangle,kek,dondurma,revani,trilece,profiterol,muhallebi,elma,muz,portakal,uzum,cilek,karpuz,kavun,seftali,roll_ekmek_beyaz,roll_ekmek_tam_bugday,ekmek,tursu`.split(',');
+  const ADDED_BASE_FOOD_IDS = `kozlenmis_domates_corbasi,misirli_kremali_sebze_corbasi,zencefilli_havuclu_kremali_corba,tatli_eksi_soslu_tavuk,ekmek_arasi_kofte,izmir_kofte,kiymali_kapuska,firinlanmis_ispanak_graten,baharatli_elma_dilim_patates,patates_piyazi,zerdecalli_misirli_pirinc_pilavi,domatesli_sehriye_pilavi,sehriyeli_bulgur_pilavi,sebzeli_meyhane_pilavi,sebzeli_kuskus_pilavi,mevsim_salatasi_yagli,salatalik_tursusu`.split(',');
 
   const results = [];
   const output = document.getElementById('test-results');
@@ -292,8 +293,27 @@
 
       await test('Mevcut yemek kimlikleri değişmeden kalır ve yinelenmez', () => {
         const ids = BASE_FOODS.map(food => food.id);
-        assert(ids.join(',') === ORIGINAL_BASE_FOOD_IDS.join(','));
+        const originalIds = ids.filter(id => !ADDED_BASE_FOOD_IDS.includes(id));
+        assert(originalIds.join(',') === ORIGINAL_BASE_FOOD_IDS.join(','));
+        assert(ADDED_BASE_FOOD_IDS.every(id => ids.includes(id)));
         assert(new Set(ids).size === ids.length);
+      });
+
+      await test('Güncel enerji listesindeki kalori düzeltmeleri uygulanır', () => {
+        assert(getFoodById('tavuklu_bezelye').calories === 320);
+        assert(getFoodById('kadinbudu_kofte').calories === 500);
+        assert(getFoodById('sehriyeli_pirinc_pilavi').calories === 320);
+        assert(getFoodById('kazandibi').calories === 150);
+        assert(getFoodById('kek').calories === 350);
+        assert(getFoodById('tatli_eksi_soslu_tavuk').calories === 380);
+      });
+
+      await test('Güncel malzeme listesindeki kesin alerjenler işaretlenir', () => {
+        assert(getFoodAllergenInfo(getFoodById('piyaz')).contains.includes('sesame'));
+        assert(getFoodAllergenInfo(getFoodById('gavurdagi_salatasi')).contains.includes('tree_nuts'));
+        assert(getFoodAllergenInfo(getFoodById('izgara_tavuk_kanat')).contains.includes('mustard'));
+        assert(getFoodAllergenInfo(getFoodById('toyga_corbasi')).contains.includes('egg'));
+        assert(getFoodAllergenInfo(getFoodById('sebzeli_kuskus_pilavi')).contains.includes('gluten_cereals'));
       });
 
       await test('Mevcut kalori hesabı çalışır', () => {
@@ -314,7 +334,7 @@
 
       await test('Veri doğrulama kritik hata döndürmez', () => {
         const report = validateAllergenDataset();
-        assert(report.errors.length === 0 && report.stats.totalFoods === ORIGINAL_BASE_FOOD_IDS.length);
+        assert(report.errors.length === 0 && report.stats.totalFoods === ORIGINAL_BASE_FOOD_IDS.length + ADDED_BASE_FOOD_IDS.length);
       });
 
       await test('Mobil alerjen düzeni için responsive CSS kuralları bulunur', async () => {

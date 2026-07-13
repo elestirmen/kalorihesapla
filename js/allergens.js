@@ -105,6 +105,14 @@ const DEFAULT_ALLERGEN_PREFERENCES = Object.freeze({
 });
 
 const ALLERGEN_NOTE_MAX_LENGTH = 500;
+const CURRENT_FOOD_LIST_NOTE = "Güncel enerji listesindeki malzemelere göre kontrol edilmiştir; kullanılan paketli ürünlerin etiketleri ayrıca incelenmelidir.";
+const CURRENT_FOOD_LIST_SAFE_PROFILE = Object.freeze({
+  contains: [],
+  possibleContains: [],
+  mayContain: [],
+  status: "verified",
+  note: CURRENT_FOOD_LIST_NOTE
+});
 
 /*
  * Yerlesik yemekler icin statik olarak incelenmis profiller. Uretici veya
@@ -119,130 +127,154 @@ const FOOD_ALLERGEN_PROFILES = Object.freeze({
     note: "Geleneksel tarhanada buğday unu; bazı tariflerde yoğurt bulunur."
   },
   mercimek_corbasi: {
-    contains: [],
-    possibleContains: ["gluten_cereals", "milk"],
+    contains: ["gluten_cereals", "milk"],
+    possibleContains: [],
     mayContain: [],
     status: "typical_recipe",
-    note: "Yaygın tariflerde un, tereyağı veya süt ürünü kullanılabilir."
+    note: CURRENT_FOOD_LIST_NOTE
   },
   suzme_mercimek_corbasi: {
-    contains: [],
-    possibleContains: ["gluten_cereals", "milk"],
+    contains: ["gluten_cereals", "milk"],
+    possibleContains: [],
     mayContain: [],
     status: "typical_recipe",
-    note: "Yaygın tariflerde un, tereyağı veya süt ürünü kullanılabilir."
+    note: CURRENT_FOOD_LIST_NOTE
   },
   ezogelin_corbasi: {
-    contains: [],
-    possibleContains: ["gluten_cereals", "milk"],
+    contains: ["gluten_cereals", "milk"],
+    possibleContains: [],
     mayContain: [],
     status: "typical_recipe",
-    note: "Bulgur, un ve tereyağı tariften tarife değişebilir."
+    note: CURRENT_FOOD_LIST_NOTE
   },
   toyga_corbasi: {
-    contains: ["milk"],
-    possibleContains: ["gluten_cereals", "egg"],
+    contains: ["gluten_cereals", "milk", "egg"],
+    possibleContains: [],
     mayContain: [],
     status: "typical_recipe",
-    note: "Yoğurtlu yaygın toyga çorbası tarifine göre."
+    note: CURRENT_FOOD_LIST_NOTE
   },
   lebeniye_corbasi: {
-    contains: ["milk"],
-    possibleContains: ["gluten_cereals", "egg"],
+    contains: ["gluten_cereals", "milk", "egg"],
+    possibleContains: [],
     mayContain: [],
     status: "typical_recipe",
-    note: "Yoğurtlu yaygın lebeniye çorbası tarifine göre."
+    note: CURRENT_FOOD_LIST_NOTE
   },
   yayla_corbasi: {
-    contains: ["milk"],
-    possibleContains: ["gluten_cereals", "egg"],
+    contains: ["gluten_cereals", "milk", "egg"],
+    possibleContains: [],
     mayContain: [],
     status: "typical_recipe",
-    note: "Yoğurtlu yayla çorbasının yaygın tarifine göre."
+    note: CURRENT_FOOD_LIST_NOTE
   },
   mantar_corbasi_kremali: {
-    contains: ["milk"],
-    possibleContains: ["gluten_cereals"],
+    contains: ["gluten_cereals", "milk"],
+    possibleContains: [],
     mayContain: [],
     status: "typical_recipe",
-    note: "Kremalı çorba tanımına ve yaygın unlu kıvamlandırmaya göre."
+    note: CURRENT_FOOD_LIST_NOTE
   },
   mantar_corbasi: {
-    contains: [],
-    possibleContains: ["gluten_cereals", "milk"],
+    contains: ["gluten_cereals", "milk"],
+    possibleContains: [],
     mayContain: [],
     status: "typical_recipe",
-    note: "Un, süt veya krema kullanılan tarifler bulunabilir."
+    note: CURRENT_FOOD_LIST_NOTE
   },
   domates_corbasi: {
-    contains: [],
-    possibleContains: ["gluten_cereals", "milk"],
+    contains: ["gluten_cereals", "milk"],
+    possibleContains: [],
     mayContain: [],
     status: "typical_recipe",
-    note: "Un, tereyağı veya süt kullanılan tarifler bulunabilir."
+    note: CURRENT_FOOD_LIST_NOTE
+  },
+  kozlenmis_domates_corbasi: {
+    contains: ["gluten_cereals", "milk"], possibleContains: [], mayContain: [], status: "verified",
+    note: CURRENT_FOOD_LIST_NOTE
   },
   brokoli_corbasi: {
-    contains: [],
-    possibleContains: ["gluten_cereals", "milk"],
+    contains: ["gluten_cereals", "milk"],
+    possibleContains: [],
     mayContain: [],
     status: "typical_recipe",
-    note: "Un, süt veya krema kullanılan tarifler bulunabilir."
+    note: CURRENT_FOOD_LIST_NOTE
   },
   kremali_sebze_corbasi: {
-    contains: ["milk"],
-    possibleContains: ["gluten_cereals"],
+    contains: ["gluten_cereals", "milk"],
+    possibleContains: [],
     mayContain: [],
     status: "typical_recipe",
-    note: "Kremalı çorba tanımına ve yaygın unlu kıvamlandırmaya göre."
+    note: CURRENT_FOOD_LIST_NOTE
+  },
+  misirli_kremali_sebze_corbasi: {
+    contains: ["gluten_cereals", "milk"], possibleContains: [], mayContain: [], status: "verified",
+    note: CURRENT_FOOD_LIST_NOTE
   },
   sebze_corbasi: {
-    contains: [],
-    possibleContains: ["gluten_cereals", "milk"],
+    contains: ["gluten_cereals", "milk"],
+    possibleContains: [],
     mayContain: [],
     status: "typical_recipe",
-    note: "Un, tereyağı veya süt kullanılan tarifler bulunabilir."
+    note: CURRENT_FOOD_LIST_NOTE
   },
   havuclu_kremali_corba: {
-    contains: ["milk"],
-    possibleContains: ["gluten_cereals"],
+    contains: ["gluten_cereals", "milk"],
+    possibleContains: [],
     mayContain: [],
     status: "typical_recipe",
-    note: "Kremalı çorba tanımına ve yaygın unlu kıvamlandırmaya göre."
+    note: CURRENT_FOOD_LIST_NOTE
+  },
+  zencefilli_havuclu_kremali_corba: {
+    contains: ["gluten_cereals", "milk"], possibleContains: [], mayContain: [], status: "verified",
+    note: CURRENT_FOOD_LIST_NOTE
+  },
+  tavuk_suyu_corbasi: {
+    contains: ["gluten_cereals", "milk"], possibleContains: [], mayContain: [], status: "verified",
+    note: CURRENT_FOOD_LIST_NOTE
   },
   tavuk_corbasi: {
-    contains: [],
-    possibleContains: ["gluten_cereals", "milk"],
+    contains: ["gluten_cereals", "milk"],
+    possibleContains: [],
     mayContain: [],
     status: "typical_recipe",
-    note: "Un veya süt ürünü eklenen tavuk çorbası tarifleri bulunabilir."
+    note: CURRENT_FOOD_LIST_NOTE
   },
   sehriyeli_tavuk_corbasi: {
-    contains: ["gluten_cereals"],
-    possibleContains: ["milk"],
+    contains: ["gluten_cereals", "milk"],
+    possibleContains: [],
     mayContain: [],
     status: "typical_recipe",
-    note: "Şehriye buğday temelli yaygın bir makarna ürünüdür."
+    note: CURRENT_FOOD_LIST_NOTE
   },
   tel_sehriye_corbasi: {
-    contains: ["gluten_cereals"],
-    possibleContains: ["milk"],
+    contains: ["gluten_cereals", "milk"],
+    possibleContains: [],
     mayContain: [],
     status: "typical_recipe",
-    note: "Tel şehriye buğday temelli yaygın bir makarna ürünüdür."
+    note: CURRENT_FOOD_LIST_NOTE
   },
   sehriye_corbasi: {
-    contains: ["gluten_cereals"],
-    possibleContains: ["milk"],
+    contains: ["gluten_cereals", "milk"],
+    possibleContains: [],
     mayContain: [],
     status: "typical_recipe",
-    note: "Şehriye buğday temelli yaygın bir makarna ürünüdür."
+    note: CURRENT_FOOD_LIST_NOTE
+  },
+  mahluta_corbasi: {
+    contains: ["gluten_cereals", "milk"], possibleContains: [], mayContain: [], status: "verified",
+    note: CURRENT_FOOD_LIST_NOTE
+  },
+  iskembe_corbasi: {
+    contains: ["gluten_cereals", "egg"], possibleContains: [], mayContain: [], status: "verified",
+    note: CURRENT_FOOD_LIST_NOTE
   },
   tutmac_corbasi: {
     contains: ["gluten_cereals", "milk"],
-    possibleContains: ["egg"],
+    possibleContains: [],
     mayContain: [],
     status: "typical_recipe",
-    note: "Yoğurtlu ve hamurlu yaygın tutmaç çorbası tarifine göre."
+    note: CURRENT_FOOD_LIST_NOTE
   },
   dugun_corbasi: {
     contains: [],
@@ -252,6 +284,26 @@ const FOOD_ALLERGEN_PROFILES = Object.freeze({
     note: "Terbiye, un veya tereyağı kullanılan tarifler bulunabilir."
   },
 
+  firinda_sebzeli_tavuk_sarma: {
+    contains: ["gluten_cereals", "milk"], possibleContains: [], mayContain: [], status: "verified",
+    note: CURRENT_FOOD_LIST_NOTE
+  },
+  tatli_eksi_soslu_tavuk: {
+    contains: ["mustard"], possibleContains: [], mayContain: [], status: "verified",
+    note: CURRENT_FOOD_LIST_NOTE
+  },
+  tavuklu_bezelye: {
+    contains: ["gluten_cereals"], possibleContains: [], mayContain: [], status: "verified",
+    note: CURRENT_FOOD_LIST_NOTE
+  },
+  izgara_tavuk_kanat: {
+    contains: ["mustard"], possibleContains: [], mayContain: [], status: "verified",
+    note: CURRENT_FOOD_LIST_NOTE
+  },
+  tavuk_but: {
+    contains: ["milk"], possibleContains: [], mayContain: [], status: "verified",
+    note: CURRENT_FOOD_LIST_NOTE
+  },
   tavuk_tantuni: {
     contains: ["gluten_cereals"],
     possibleContains: [],
@@ -267,11 +319,11 @@ const FOOD_ALLERGEN_PROFILES = Object.freeze({
     note: "Ekmek arası tavuk döner tanımına göre."
   },
   tavuk_kulbasti_begendi: {
-    contains: [],
-    possibleContains: ["milk"],
+    contains: ["gluten_cereals", "milk"],
+    possibleContains: [],
     mayContain: [],
     status: "typical_recipe",
-    note: "Beğendide süt veya tereyağı kullanılan yaygın tariflere göre."
+    note: CURRENT_FOOD_LIST_NOTE
   },
   tavuk_sinitzel: {
     contains: ["gluten_cereals"],
@@ -287,6 +339,14 @@ const FOOD_ALLERGEN_PROFILES = Object.freeze({
     status: "typical_recipe",
     note: "Ekmek arası servis tanımına göre."
   },
+  ekmek_arasi_kofte: {
+    contains: ["gluten_cereals", "egg"], possibleContains: [], mayContain: [], status: "verified",
+    note: CURRENT_FOOD_LIST_NOTE
+  },
+  izmir_kofte: {
+    contains: ["gluten_cereals", "egg"], possibleContains: [], mayContain: [], status: "verified",
+    note: CURRENT_FOOD_LIST_NOTE
+  },
   inegol_kofte: {
     contains: [],
     possibleContains: ["gluten_cereals", "egg"],
@@ -295,25 +355,25 @@ const FOOD_ALLERGEN_PROFILES = Object.freeze({
     note: "Köfte harcında ekmek veya yumurta kullanılan tarifler bulunabilir."
   },
   kadinbudu_kofte: {
-    contains: ["egg"],
-    possibleContains: ["gluten_cereals"],
+    contains: ["gluten_cereals", "egg"],
+    possibleContains: [],
     mayContain: [],
     status: "typical_recipe",
-    note: "Yumurtalı ve pane kaplamalı yaygın kadınbudu köfte tarifine göre."
+    note: CURRENT_FOOD_LIST_NOTE
   },
   hasanpasa_kofte: {
-    contains: [],
-    possibleContains: ["gluten_cereals", "egg", "milk"],
+    contains: ["gluten_cereals", "egg", "milk"],
+    possibleContains: [],
     mayContain: [],
     status: "typical_recipe",
-    note: "Köfte harcı ve patates püresi tariften tarife değişebilir."
+    note: CURRENT_FOOD_LIST_NOTE
   },
   hunkar_begendi: {
-    contains: [],
+    contains: ["gluten_cereals"],
     possibleContains: ["milk"],
     mayContain: [],
     status: "typical_recipe",
-    note: "Beğendide süt veya tereyağı kullanılan yaygın tariflere göre."
+    note: CURRENT_FOOD_LIST_NOTE
   },
   kofte_izgara: {
     contains: [],
@@ -351,40 +411,56 @@ const FOOD_ALLERGEN_PROFILES = Object.freeze({
     note: "Köfte harcında ekmek veya yumurta kullanılan tarifler bulunabilir."
   },
   alman_usulu_patates: {
-    contains: [],
-    possibleContains: ["egg", "mustard"],
+    contains: ["egg", "mustard"],
+    possibleContains: [],
     mayContain: [],
     status: "typical_recipe",
-    note: "Mayonez veya hardal kullanılan patates salatası tarifleri bulunabilir."
+    note: CURRENT_FOOD_LIST_NOTE
+  },
+  kiymali_kapuska: {
+    contains: [], possibleContains: [], mayContain: [], status: "verified",
+    note: CURRENT_FOOD_LIST_NOTE
   },
 
+  firinlanmis_ispanak_graten: {
+    contains: ["gluten_cereals", "milk"], possibleContains: [], mayContain: [], status: "verified",
+    note: CURRENT_FOOD_LIST_NOTE
+  },
   ispanak_graten: {
-    contains: ["milk"],
-    possibleContains: ["gluten_cereals"],
+    contains: ["gluten_cereals", "milk"],
+    possibleContains: [],
     mayContain: [],
     status: "typical_recipe",
-    note: "Beşamel veya peynirli yaygın graten tarifine göre."
+    note: CURRENT_FOOD_LIST_NOTE
   },
   karnabahar_graten: {
-    contains: ["milk"],
-    possibleContains: ["gluten_cereals"],
+    contains: ["gluten_cereals", "milk"],
+    possibleContains: [],
     mayContain: [],
     status: "typical_recipe",
-    note: "Beşamel veya peynirli yaygın graten tarifine göre."
+    note: CURRENT_FOOD_LIST_NOTE
   },
   patates_puresi: {
-    contains: [],
-    possibleContains: ["milk"],
+    contains: ["milk"],
+    possibleContains: [],
     mayContain: [],
     status: "typical_recipe",
-    note: "Süt veya tereyağı kullanılan patates püresi tarifleri bulunabilir."
+    note: CURRENT_FOOD_LIST_NOTE
+  },
+  baharatli_elma_dilim_patates: {
+    contains: [], possibleContains: [], mayContain: [], status: "verified",
+    note: CURRENT_FOOD_LIST_NOTE
   },
   piyaz: {
-    contains: [],
-    possibleContains: ["egg", "mustard"],
+    contains: ["sesame"],
+    possibleContains: [],
     mayContain: [],
     status: "typical_recipe",
-    note: "Yumurta veya hardallı sos kullanılan piyaz tarifleri bulunabilir."
+    note: CURRENT_FOOD_LIST_NOTE
+  },
+  patates_piyazi: {
+    contains: [], possibleContains: [], mayContain: [], status: "verified",
+    note: CURRENT_FOOD_LIST_NOTE
   },
   zeytinyagli_kereviz: {
     contains: ["celery"],
@@ -395,39 +471,39 @@ const FOOD_ALLERGEN_PROFILES = Object.freeze({
   },
 
   pirinc_pilavi: {
-    contains: [],
-    possibleContains: ["milk"],
+    contains: ["milk"],
+    possibleContains: [],
     mayContain: [],
     status: "typical_recipe",
-    note: "Tereyağı kullanılan pilav tarifleri bulunabilir."
+    note: CURRENT_FOOD_LIST_NOTE
   },
   sade_pirinc_pilavi: {
-    contains: [],
-    possibleContains: ["milk"],
+    contains: ["milk"],
+    possibleContains: [],
     mayContain: [],
     status: "typical_recipe",
-    note: "Tereyağı kullanılan pilav tarifleri bulunabilir."
+    note: CURRENT_FOOD_LIST_NOTE
   },
   sebzeli_pirinc_pilavi: {
-    contains: [],
-    possibleContains: ["milk"],
+    contains: ["milk"],
+    possibleContains: [],
     mayContain: [],
     status: "typical_recipe",
-    note: "Tereyağı kullanılan pilav tarifleri bulunabilir."
+    note: CURRENT_FOOD_LIST_NOTE
   },
   bulgur_pilavi: {
-    contains: ["gluten_cereals"],
-    possibleContains: ["milk"],
+    contains: ["gluten_cereals", "milk"],
+    possibleContains: [],
     mayContain: [],
     status: "typical_recipe",
-    note: "Bulgur buğday ürünüdür. Bazı tariflerde tereyağı kullanılabilir."
+    note: CURRENT_FOOD_LIST_NOTE
   },
   siyez_bulgur_pilavi: {
-    contains: ["gluten_cereals"],
-    possibleContains: ["milk"],
+    contains: ["gluten_cereals", "milk"],
+    possibleContains: [],
     mayContain: [],
     status: "typical_recipe",
-    note: "Siyez bulguru buğday ürünüdür; tereyağı tariften tarife değişebilir."
+    note: CURRENT_FOOD_LIST_NOTE
   },
   sehriyeli_siyez_bulgur: {
     contains: ["gluten_cereals"],
@@ -458,25 +534,25 @@ const FOOD_ALLERGEN_PROFILES = Object.freeze({
     note: "Tereyağı kullanılan pilav tarifleri bulunabilir."
   },
   meyhane_pilavi: {
-    contains: ["gluten_cereals"],
-    possibleContains: ["milk"],
+    contains: ["gluten_cereals", "milk"],
+    possibleContains: [],
     mayContain: [],
     status: "typical_recipe",
-    note: "Yaygın meyhane pilavı tarifinde bulgur bulunur."
+    note: CURRENT_FOOD_LIST_NOTE
   },
   havuclu_arpa_sehriye: {
-    contains: ["gluten_cereals"],
-    possibleContains: ["milk"],
+    contains: ["gluten_cereals", "milk"],
+    possibleContains: [],
     mayContain: [],
     status: "typical_recipe",
-    note: "Arpa şehriye buğday temelli yaygın bir makarna ürünüdür."
+    note: CURRENT_FOOD_LIST_NOTE
   },
   sehriyeli_pirinc_pilavi: {
-    contains: ["gluten_cereals"],
-    possibleContains: ["milk"],
+    contains: ["gluten_cereals", "milk"],
+    possibleContains: [],
     mayContain: [],
     status: "typical_recipe",
-    note: "Şehriye buğday temelli yaygın bir makarna ürünüdür."
+    note: CURRENT_FOOD_LIST_NOTE
   },
   ic_pilav: {
     contains: [],
@@ -493,11 +569,31 @@ const FOOD_ALLERGEN_PROFILES = Object.freeze({
     note: "Tereyağı kullanılan nohutlu pilav tarifleri bulunabilir."
   },
   sebzeli_siyez_bulgur_pilavi: {
-    contains: ["gluten_cereals"],
-    possibleContains: ["milk"],
+    contains: ["gluten_cereals", "milk"],
+    possibleContains: [],
     mayContain: [],
     status: "typical_recipe",
-    note: "Siyez bulguru buğday ürünüdür; tereyağı tariften tarife değişebilir."
+    note: CURRENT_FOOD_LIST_NOTE
+  },
+  zerdecalli_misirli_pirinc_pilavi: {
+    contains: ["milk"], possibleContains: [], mayContain: [], status: "verified",
+    note: CURRENT_FOOD_LIST_NOTE
+  },
+  domatesli_sehriye_pilavi: {
+    contains: ["gluten_cereals", "milk"], possibleContains: [], mayContain: [], status: "verified",
+    note: CURRENT_FOOD_LIST_NOTE
+  },
+  sehriyeli_bulgur_pilavi: {
+    contains: ["gluten_cereals", "milk"], possibleContains: [], mayContain: [], status: "verified",
+    note: CURRENT_FOOD_LIST_NOTE
+  },
+  sebzeli_meyhane_pilavi: {
+    contains: ["gluten_cereals", "milk"], possibleContains: [], mayContain: [], status: "verified",
+    note: CURRENT_FOOD_LIST_NOTE
+  },
+  sebzeli_kuskus_pilavi: {
+    contains: ["gluten_cereals", "milk"], possibleContains: [], mayContain: [], status: "verified",
+    note: CURRENT_FOOD_LIST_NOTE
   },
 
   domates_soslu_penne: {
@@ -508,11 +604,11 @@ const FOOD_ALLERGEN_PROFILES = Object.freeze({
     note: "Yaygın buğday makarnası ve bazı yumurtalı makarna tariflerine göre."
   },
   makarna_sade: {
-    contains: ["gluten_cereals"],
+    contains: ["gluten_cereals", "milk"],
     possibleContains: ["egg"],
     mayContain: [],
     status: "typical_recipe",
-    note: "Yaygın buğday makarnası ve bazı yumurtalı makarna tariflerine göre."
+    note: CURRENT_FOOD_LIST_NOTE
   },
   peynirli_tam_bugday_makarna: {
     contains: ["gluten_cereals", "milk"],
@@ -536,18 +632,18 @@ const FOOD_ALLERGEN_PROFILES = Object.freeze({
     note: "Yoğurtlu makarna tanımına ve yaygın hamur tarifine göre."
   },
   cevizli_eriste: {
-    contains: ["gluten_cereals", "tree_nuts"],
+    contains: ["gluten_cereals", "milk", "tree_nuts"],
     possibleContains: ["egg"],
     mayContain: [],
     status: "typical_recipe",
-    note: "Erişte ve ceviz içeren yemek tanımına göre."
+    note: CURRENT_FOOD_LIST_NOTE
   },
   sebzeli_eriste: {
-    contains: ["gluten_cereals"],
+    contains: ["gluten_cereals", "milk"],
     possibleContains: ["egg"],
     mayContain: [],
     status: "typical_recipe",
-    note: "Erişte ve yaygın yumurtalı hamur tarifine göre."
+    note: CURRENT_FOOD_LIST_NOTE
   },
   peynirli_eriste: {
     contains: ["gluten_cereals", "milk"],
@@ -572,18 +668,18 @@ const FOOD_ALLERGEN_PROFILES = Object.freeze({
   },
 
   peynirli_borek: {
-    contains: ["gluten_cereals", "milk"],
-    possibleContains: ["egg", "sesame"],
+    contains: ["gluten_cereals", "milk", "egg"],
+    possibleContains: ["sesame"],
     mayContain: [],
     status: "typical_recipe",
-    note: "Hamur ve peynir içeren yaygın tarife göre."
+    note: CURRENT_FOOD_LIST_NOTE
   },
   ispanakli_borek: {
-    contains: ["gluten_cereals"],
-    possibleContains: ["egg", "milk", "sesame"],
+    contains: ["gluten_cereals", "milk", "egg"],
+    possibleContains: ["sesame"],
     mayContain: [],
     status: "typical_recipe",
-    note: "Yufkalı börek ve üzerindeki malzemeler tariften tarife değişebilir."
+    note: CURRENT_FOOD_LIST_NOTE
   },
   su_boregi: {
     contains: ["gluten_cereals"],
@@ -593,11 +689,11 @@ const FOOD_ALLERGEN_PROFILES = Object.freeze({
     note: "Hamur, peynir ve üzerindeki malzemeler tariften tarife değişebilir."
   },
   kiymali_borek: {
-    contains: ["gluten_cereals"],
-    possibleContains: ["egg", "milk", "sesame"],
+    contains: ["gluten_cereals", "milk", "egg"],
+    possibleContains: ["sesame"],
     mayContain: [],
     status: "typical_recipe",
-    note: "Yufkalı börek ve üzerindeki malzemeler tariften tarife değişebilir."
+    note: CURRENT_FOOD_LIST_NOTE
   },
   patatesli_borek: {
     contains: ["gluten_cereals"],
@@ -621,6 +717,10 @@ const FOOD_ALLERGEN_PROFILES = Object.freeze({
     note: "Hamur ve iç malzemeler gözleme çeşidine göre değişebilir."
   },
 
+  mevsim_salatasi_yagli: {
+    contains: [], possibleContains: ["mustard"], mayContain: [], status: "typical_recipe",
+    note: "Salata sosunda hardal kullanılıp kullanılmadığı ayrıca kontrol edilmelidir."
+  },
   mevsim_salatasi_yogurt: {
     contains: ["milk"],
     possibleContains: [],
@@ -628,19 +728,23 @@ const FOOD_ALLERGEN_PROFILES = Object.freeze({
     status: "typical_recipe",
     note: "Yoğurtlu salata tanımına göre."
   },
+  akdeniz_salatasi: {
+    contains: ["milk"], possibleContains: [], mayContain: [], status: "verified",
+    note: CURRENT_FOOD_LIST_NOTE
+  },
   gavurdagi_salatasi: {
-    contains: [],
-    possibleContains: ["tree_nuts"],
+    contains: ["tree_nuts"],
+    possibleContains: [],
     mayContain: [],
     status: "typical_recipe",
-    note: "Ceviz eklenen Gavurdağı salatası tarifleri bulunabilir."
+    note: CURRENT_FOOD_LIST_NOTE
   },
   coleslaw_salatasi: {
-    contains: [],
-    possibleContains: ["egg", "milk", "mustard"],
+    contains: ["egg"],
+    possibleContains: ["mustard"],
     mayContain: [],
     status: "typical_recipe",
-    note: "Mayonezli veya hardallı coleslaw sosu tariften tarife değişebilir."
+    note: CURRENT_FOOD_LIST_NOTE
   },
   cacik: {
     contains: ["milk"],
@@ -651,11 +755,51 @@ const FOOD_ALLERGEN_PROFILES = Object.freeze({
   },
   kis_patates_salatasi: {
     contains: [],
-    possibleContains: ["egg", "mustard"],
+    possibleContains: [],
     mayContain: [],
-    status: "typical_recipe",
-    note: "Mayonez veya hardal kullanılan patates salatası tarifleri bulunabilir."
+    status: "verified",
+    note: CURRENT_FOOD_LIST_NOTE
   },
+  salatalik_tursusu: {
+    contains: [], possibleContains: ["sulphites"], mayContain: [], status: "typical_recipe",
+    note: "Sirke ve koruyucu içeriği kullanılan ürüne göre değişebileceğinden etiket kontrol edilmelidir."
+  },
+
+  // Güncel dosyada malzemeleri açıkça verilen ve AB 14 alerjeni içermeyen tarifler.
+  baharatli_tavuk_sis: CURRENT_FOOD_LIST_SAFE_PROFILE,
+  tavuk_sote: CURRENT_FOOD_LIST_SAFE_PROFILE,
+  tavuk_fajita: CURRENT_FOOD_LIST_SAFE_PROFILE,
+  firin_tavuk_baget: CURRENT_FOOD_LIST_SAFE_PROFILE,
+  ciftlik_kebabi: CURRENT_FOOD_LIST_SAFE_PROFILE,
+  sebzeli_kebap: CURRENT_FOOD_LIST_SAFE_PROFILE,
+  tas_kebabi: CURRENT_FOOD_LIST_SAFE_PROFILE,
+  orman_kebabi: CURRENT_FOOD_LIST_SAFE_PROFILE,
+  sac_tava: CURRENT_FOOD_LIST_SAFE_PROFILE,
+  belen_tava: CURRENT_FOOD_LIST_SAFE_PROFILE,
+  etli_mevsim_turlusu: CURRENT_FOOD_LIST_SAFE_PROFILE,
+  coban_kavurma: CURRENT_FOOD_LIST_SAFE_PROFILE,
+  kiymali_patates_oturtma: CURRENT_FOOD_LIST_SAFE_PROFILE,
+  kiymali_yesil_mercimek: CURRENT_FOOD_LIST_SAFE_PROFILE,
+  kiymali_bezelye: CURRENT_FOOD_LIST_SAFE_PROFILE,
+  kiymali_semizotu: CURRENT_FOOD_LIST_SAFE_PROFILE,
+  kuru_fasulye: CURRENT_FOOD_LIST_SAFE_PROFILE,
+  patlican_musakka: CURRENT_FOOD_LIST_SAFE_PROFILE,
+  barbunya_pilaki: CURRENT_FOOD_LIST_SAFE_PROFILE,
+  zeytinyagli_barbunya: CURRENT_FOOD_LIST_SAFE_PROFILE,
+  yesil_mercimek_yemegi: CURRENT_FOOD_LIST_SAFE_PROFILE,
+  zeytinyagli_pirasa: CURRENT_FOOD_LIST_SAFE_PROFILE,
+  zeytinyagli_ispanak: CURRENT_FOOD_LIST_SAFE_PROFILE,
+  zeytinyagli_kabak: CURRENT_FOOD_LIST_SAFE_PROFILE,
+  zeytinyagli_taze_fasulye: CURRENT_FOOD_LIST_SAFE_PROFILE,
+  zeytinyagli_karisik_kizartma: CURRENT_FOOD_LIST_SAFE_PROFILE,
+  firinda_sebzeler: CURRENT_FOOD_LIST_SAFE_PROFILE,
+  nohut_yemegi: CURRENT_FOOD_LIST_SAFE_PROFILE,
+  sebzeli_patates_oturtma: CURRENT_FOOD_LIST_SAFE_PROFILE,
+  elma_dilim_patates: CURRENT_FOOD_LIST_SAFE_PROFILE,
+  sumakli_sogan_salatasi: CURRENT_FOOD_LIST_SAFE_PROFILE,
+  sogus_salatasi: CURRENT_FOOD_LIST_SAFE_PROFILE,
+  pancar_tursusu: CURRENT_FOOD_LIST_SAFE_PROFILE,
+  yesillik: CURRENT_FOOD_LIST_SAFE_PROFILE,
 
   ayran: {
     contains: ["milk"],
@@ -693,25 +837,25 @@ const FOOD_ALLERGEN_PROFILES = Object.freeze({
     note: "Sütlü tatlı tanımına ve nişasta ya da unla yapılan tariflere göre."
   },
   keskul: {
+    contains: ["milk", "tree_nuts"],
+    possibleContains: [],
+    mayContain: [],
+    status: "typical_recipe",
+    note: CURRENT_FOOD_LIST_NOTE
+  },
+  supangle: {
     contains: ["milk"],
     possibleContains: ["tree_nuts"],
     mayContain: [],
     status: "typical_recipe",
-    note: "Sütlü keşkül ve bademli tarif çeşitlerine göre."
-  },
-  supangle: {
-    contains: ["milk"],
-    possibleContains: ["gluten_cereals", "egg"],
-    mayContain: [],
-    status: "typical_recipe",
-    note: "Sütlü çikolatalı tatlı ve tarif değişkenliğine göre."
+    note: "Güncel listede süt ve pralin belirtilmiştir; pralinin sert kabuklu yemiş içeriği ürün etiketinden doğrulanmalıdır."
   },
   kek: {
-    contains: ["gluten_cereals", "egg"],
-    possibleContains: ["milk", "tree_nuts"],
+    contains: ["gluten_cereals", "egg", "milk"],
+    possibleContains: [],
     mayContain: [],
     status: "typical_recipe",
-    note: "Yaygın kek hamuru ve malzeme çeşitlerine göre."
+    note: CURRENT_FOOD_LIST_NOTE
   },
   dondurma: {
     contains: [],
