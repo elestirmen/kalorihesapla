@@ -149,7 +149,9 @@
 
       await test('Menü uyarısında alerjen adları görünür', () => {
         const indicator = renderMealSlotAllergenIndicator(getFoodById('mantu'));
-        assert(indicator.includes('Gluten') && indicator.includes('Süt') && indicator.includes('Yumurta'));
+        assert(indicator.includes('Gluten') && indicator.includes('[gluten_cereals]'));
+        assert(indicator.includes('Süt') && indicator.includes('[milk]'));
+        assert(indicator.includes('Yumurta') && indicator.includes('[egg]'));
       });
 
       await test('Yemek yönetiminde planlama kontrolleri gizlenir', () => {
@@ -157,6 +159,14 @@
         assert(document.getElementById('planner-controls').classList.contains('hidden'));
         assert(document.getElementById('planner-actions').classList.contains('hidden'));
         switchTab('planner');
+      });
+
+      await test('Yardım menüsü açılıp kapanır', () => {
+        openHelp();
+        const overlay = document.getElementById('help-overlay');
+        assert(overlay.classList.contains('active') && overlay.getAttribute('aria-hidden') === 'false');
+        closeHelp();
+        assert(!overlay.classList.contains('active') && overlay.getAttribute('aria-hidden') === 'true');
       });
 
       await test('JSON sürüm 2 içe aktarılabilir', () => {
@@ -179,6 +189,51 @@
         week.days[0].lunch[0] = 'mantu';
         const result = Storage.importWeek(JSON.stringify({ version: 3, weekId: '2026-W04', week, dependencies: { customFoods: [], calorieOverrides: {}, allergenOverrides: { mantu: { contains: ['egg'], status: 'verified', note: 'İçe aktarıldı' } } } }));
         assert(result.success && Storage.getAllergenOverrides().mantu.contains.includes('egg'));
+      });
+
+      await test('Tam JSON yedeği başka tarayıcıya bütün verileri taşır', () => {
+        const testWeek = Storage.createEmptyWeek(new Date('2026-02-02T12:00:00'));
+        const customFood = Storage.addCustomFood({
+          name: 'Taşınan Yemek',
+          category: 'diger',
+          calories: 321,
+          portion: '1 porsiyon',
+          allergenInfo: { contains: ['sesame'], status: 'verified', note: 'Yedek testi' }
+        });
+        testWeek.days[0].lunch[0] = customFood.id;
+        Storage.saveWeek('2026-W06', testWeek);
+        Storage.setCalorieOverride('mantu', 555);
+        Storage.setAllergenOverride('mantu', { contains: ['egg'], status: 'verified', note: 'Yedek testi' });
+        Storage.toggleFavorite('mantu');
+        Storage.saveSettings({ lastWeekId: '2026-W06', dailyCalorieGoal: 2450, avoidedAllergens: ['milk'] });
+
+        const backup = Storage.exportBackup();
+        clearAppStorage();
+        const result = Storage.importBackup(backup);
+        const restoredCustomFood = Storage.getCustomFoods().find(food => food.id === customFood.id);
+
+        assert(result.success && result.importedWeeks > 0);
+        assert(Storage.getWeek('2026-W06')?.days[0].lunch[0] === customFood.id);
+        assert(restoredCustomFood?.calories === 321 && restoredCustomFood.allergenInfo.contains.includes('sesame'));
+        assert(Storage.getCalorieOverrides().mantu === 555);
+        assert(Storage.getAllergenOverrides().mantu.contains.includes('egg'));
+        assert(Storage.isFavorite('mantu'));
+        assert(Storage.getSettings().dailyCalorieGoal === 2450 && Storage.getSettings().avoidedAllergens.includes('milk'));
+        Storage.removeCalorieOverride('mantu');
+        Storage.removeAllergenOverride('mantu');
+        Storage.removeFavorite('mantu');
+      });
+
+      await test('Menü değişikliği yenileme beklenmeden localStorage içine yazılır', () => {
+        const previousWeekId = currentWeekId;
+        const previousWeek = currentWeek;
+        currentWeekId = '2026-W07';
+        currentWeek = Storage.createEmptyWeek(new Date('2026-02-09T12:00:00'));
+        currentWeek.days[0].dinner[0] = 'mantu';
+        autoSave();
+        assert(Storage.getWeek(currentWeekId)?.days[0].dinner[0] === 'mantu');
+        currentWeekId = previousWeekId;
+        currentWeek = previousWeek;
       });
 
       await test('XLSX Plan, Alerjenler ve Detay sayfalarında belirgin uyarılar bulunur', () => {
@@ -207,6 +262,7 @@
         assert(planRows.every(row => row.length === 6));
         assert(captured.sheets.Plan['!cols'].length === 6);
         assert(planRows.some(row => row.some(cell => String(cell?.v || '').includes('[TERCİH ÇAKIŞMASI]'))));
+        assert(planRows.some(row => row.some(cell => String(cell?.v || '').includes('[milk]'))));
         assert(!planRows.some(row => row.some(cell => cell?.v === 'Hedef %' || cell?.v === 'Durum')));
         assert(captured.workbook?.Workbook?.Names?.some(name => name.Name === '_xlnm.Print_Area' && name.Ref.includes('$A$1:$F$')));
         assert(allergenRows.some(row => row.some(cell => cell?.v === 'TERCİH UYARISI')));

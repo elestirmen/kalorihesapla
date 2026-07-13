@@ -54,6 +54,19 @@
             </div>
           </details>
         </div>
+        <details class="header-backup" id="backup-actions">
+          <summary class="btn header-backup-btn" title="Tüm uygulama verilerini yedekle veya geri yükle"><span aria-hidden="true">💾</span> Yedek</summary>
+          <div class="header-more-menu backup-menu">
+            <strong>Tüm verileri taşı</strong>
+            <span>Haftalar, yemekler, kaloriler, alerjenler ve ayarlar</span>
+            <button class="btn" id="btn-backup-all" type="button"><span aria-hidden="true">↓</span> Tam yedeği indir</button>
+            <button class="btn" id="btn-restore-all" type="button"><span aria-hidden="true">↑</span> Yedekten geri yükle</button>
+            <small>JSON yedeği mevcut kayıtları silmeden birleştirilir.</small>
+          </div>
+        </details>
+        <button class="btn header-help-btn" id="btn-help" type="button" title="Kullanım yardımını aç" aria-haspopup="dialog" aria-controls="help-overlay">
+          <span class="header-help-icon" aria-hidden="true">?</span><span>Yardım</span>
+        </button>
       </div>
     </div>
   </header>
@@ -100,6 +113,7 @@
           <div>
             <h2 id="allergen-settings-title">Kaçınılan alerjenler</h2>
             <p>Otomatik menüde kullanılmamasını istediklerinizi seçin.</p>
+            <p class="allergen-code-help">Köşeli parantez içindeki ifadeler uygulamanın teknik alerjen kodlarıdır.</p>
           </div>
           <button class="btn btn-sm" id="btn-reset-allergen-preferences" type="button">Sıfırla</button>
         </div>
@@ -248,6 +262,104 @@
         </div>
       </div>
       <div class="search-results" id="search-results"></div>
+    </div>
+  </div>
+
+  <!-- ══════════ HELP DIALOG ══════════ -->
+  <div class="help-overlay" id="help-overlay" aria-hidden="true">
+    <div class="help-dialog" role="dialog" aria-modal="true" aria-labelledby="help-title" tabindex="-1">
+      <header class="help-header">
+        <div>
+          <span class="help-eyebrow">Kullanım Kılavuzu</span>
+          <h2 id="help-title">Kalori Hesapla Yardım</h2>
+        </div>
+        <button class="help-close" id="btn-close-help" type="button" aria-label="Yardımı kapat" title="Kapat">&#10005;</button>
+      </header>
+
+      <div class="help-layout">
+        <nav class="help-nav" aria-label="Yardım bölümleri">
+          <a href="#help-start">Hızlı başlangıç</a>
+          <a href="#help-foods">Yemek yönetimi</a>
+          <a href="#help-planner">Haftalık menü</a>
+          <a href="#help-allergens">Alerjenler</a>
+          <a href="#help-excel">Excel ve yazdırma</a>
+          <a href="#help-backup">Kayıt ve yedek</a>
+        </nav>
+
+        <div class="help-content">
+          <section class="help-section" id="help-start">
+            <h3>Hızlı başlangıç</h3>
+            <ol>
+              <li><strong>Yemekler ve Kaloriler</strong> sekmesinde yemeklerin porsiyon ve kalori bilgilerini kontrol edin.</li>
+              <li>Gerekli yemekleri ve alerjen bilgilerini ekleyin veya düzenleyin.</li>
+              <li><strong>Haftalık Menü</strong> sekmesinde boş bir alana tıklayarak yemek seçin.</li>
+              <li>Hazır listeyi <strong>Excel'e Aktar</strong> ile indirin veya <strong>Diğer İşlemler &gt; Yazdır</strong> ile yazdırın.</li>
+            </ol>
+          </section>
+
+          <section class="help-section" id="help-foods">
+            <h3>Yemek ve kalori yönetimi</h3>
+            <ol>
+              <li>Üst menüden <strong>Yemekler ve Kaloriler</strong> sekmesini açın.</li>
+              <li>Yeni kayıt için <strong>Yeni Yemek Ekle</strong> düğmesine basın; yemek adı, bir porsiyonun kalorisi, kategori ve porsiyon açıklamasını girin.</li>
+              <li>Mevcut bir yemeğin kalorisini değiştirmek için listedeki <strong>kcal</strong> alanını düzenleyin. Yerleşik yemekte geri alma düğmesiyle kaynak değere dönebilirsiniz.</li>
+              <li>Yıldız düğmesi yemeği favorilere ekler. Özel yemekler çöp kutusu düğmesiyle silinebilir.</li>
+            </ol>
+            <p class="help-note"><strong>Kalori hesabı:</strong> Menüdeki değer, yemeğin kayıtlı bir porsiyon kalorisi ile seçilen porsiyon katsayısının çarpımıdır.</p>
+          </section>
+
+          <section class="help-section" id="help-planner">
+            <h3>Haftalık menü hazırlama</h3>
+            <ol>
+              <li><strong>Haftalık Menü</strong> sekmesini açın ve oklarla veya tarih alanıyla haftayı seçin.</li>
+              <li>Öğle ya da akşam bölümündeki boş satıra tıklayın; açılan aramadan yemeği seçin.</li>
+              <li><strong>1x</strong> porsiyon düğmesine basarak 0.5x, 1x, 1.5x ve 2x seçenekleri arasında geçin.</li>
+              <li>Bir günü hızlı hazırlamak için gün başlığındaki <strong>Doldur</strong>, bütün hafta için <strong>Otomatik Doldur</strong> düğmesini kullanın.</li>
+              <li>Günlük ve öğün toplamları her değişiklikten sonra otomatik hesaplanır. Günlük hedef üstteki kalori alanından değiştirilebilir.</li>
+            </ol>
+            <p class="help-note">Otomatik doldurma, seçili alerjen kurallarına uyan aday bulamazsa ilgili alanları boş bırakır; kısıtlamaları kendiliğinden gevşetmez.</p>
+          </section>
+
+          <section class="help-section" id="help-allergens">
+            <h3>Alerjen bilgileri ve uyarılar</h3>
+            <ol>
+              <li>Yemek listesinde <strong>Alerjenleri düzenle</strong> düğmesini açın.</li>
+              <li><strong>İçerdiği Alerjenler</strong> alanına tarifte veya üründe bulunduğu bilinenleri girin.</li>
+              <li><strong>Tarife Göre Bulunabilir</strong> alanını tarife göre değişebilen içerikler için kullanın.</li>
+              <li><strong>Çapraz Temas Uyarısı</strong> alanını yalnızca ortak üretim hattı, ekipman veya etiket uyarısı gibi çapraz temas bilgileri için kullanın.</li>
+              <li>Bilgi doğrulanmadıysa durumu <strong>Alerjen bilgisi bilinmiyor</strong> olarak bırakın ve gerekiyorsa not ekleyin.</li>
+            </ol>
+            <p class="help-note"><strong>Teknik kodlar:</strong> <code>milk</code>, <code>egg</code> ve <code>gluten_cereals</code> gibi köşeli parantez içinde görünen değerler uygulamanın veri kodlarıdır.</p>
+            <p class="help-warning">Haftalık menüde kırmızı uyarılar bilinen içeriği, turuncu uyarılar tarif değişkenliğini, sarı uyarılar çapraz teması ve gri soru işareti bilinmeyen profili gösterir. Bilgi yalnızca renkle değil, metinle de belirtilir.</p>
+            <p class="help-health">Alerjen bilgileri genel bilgilendirme amaçlıdır. Tarifler, kullanılan ürünler ve hazırlama koşulları değişebilir. Ciddi alerjisi bulunan kullanıcılar malzeme listesini, ürün etiketini ve çapraz temas riskini ayrıca kontrol etmelidir.</p>
+          </section>
+
+          <section class="help-section" id="help-excel">
+            <h3>Excel ve yazdırma</h3>
+            <ol>
+              <li>Hazırlanan haftayı üstteki görünür <strong>Excel'e Aktar</strong> düğmesiyle indirin.</li>
+              <li><strong>Plan</strong> sayfası duvara asılabilecek sade haftalık görünümü içerir.</li>
+              <li><strong>Alerjenler</strong> sayfası kesin içerik, tarif değişkenliği, çapraz temas, durum ve tercih çakışmalarını ayrıntılı gösterir.</li>
+              <li><strong>Detay</strong> sayfası porsiyon ve kalori hesaplarını satır bazında incelemek içindir.</li>
+              <li>Doğrudan çıktı için <strong>Diğer İşlemler &gt; Yazdır</strong> yolunu kullanın.</li>
+            </ol>
+          </section>
+
+          <section class="help-section" id="help-backup">
+            <h3>Kayıtlı haftalar ve yedekleme</h3>
+            <ol>
+              <li>Menü değişiklikleri tarayıcıda otomatik saklanır. <strong>Kayıtlı</strong> düğmesiyle diğer haftaları açabilirsiniz.</li>
+              <li><strong>Yeni Hafta</strong> yeni bir haftalık plan oluşturur; mevcut kayıtlı haftaları silmez.</li>
+              <li>Başka bilgisayara geçmek için üstteki <strong>Yedek &gt; Tam yedeği indir</strong> seçeneğiyle tek bir JSON dosyası oluşturun.</li>
+              <li>Yeni bilgisayarda uygulamayı açıp <strong>Yedek &gt; Yedekten geri yükle</strong> seçeneğinden bu dosyayı seçin.</li>
+              <li>Tam yedek; bütün haftaları, özel yemekleri, kalori ve alerjen düzenlemelerini, favorileri, günlük hedefi ve alerjen tercihlerini taşır.</li>
+              <li><strong>Diğer İşlemler &gt; JSON Dışa Aktar</strong> ise yalnızca açık olan haftayı paylaşmak içindir.</li>
+            </ol>
+            <p class="help-note">Tarayıcı verileri yalnızca aynı adres ve tarayıcı profilinde otomatik görünür. Farklı bilgisayar, tarayıcı veya adres için tam JSON yedeğini kullanın.</p>
+            <p class="help-note">Geri yükleme mevcut kayıtları silmez; verileri birleştirir. Aynı hafta kimliği iki tarafta da varsa yedek dosyasındaki hafta kullanılır.</p>
+          </section>
+        </div>
+      </div>
     </div>
   </div>
 

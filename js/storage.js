@@ -9,6 +9,8 @@ const CUSTOM_FOODS_KEY = 'kalori_custom_foods';
 const FAVORITES_KEY = 'kalori_favorites';
 const CALORIE_OVERRIDES_KEY = 'kalori_calorie_overrides';
 const ALLERGEN_OVERRIDES_KEY = 'kalori_allergen_overrides';
+const FULL_BACKUP_TYPE = 'kalori_full_backup';
+const FULL_BACKUP_VERSION = 1;
 const WEEK_ID_PATTERN = /^\d{4}-W\d{2}$/;
 const DATE_ONLY_PATTERN = /^\d{4}-\d{2}-\d{2}$/;
 const WEEK_DAY_COUNT = 7;
@@ -300,6 +302,73 @@ const Storage = {
     }
   },
 
+  exportBackup() {
+    return JSON.stringify({
+      type: FULL_BACKUP_TYPE,
+      version: FULL_BACKUP_VERSION,
+      exportedAt: new Date().toISOString(),
+      data: {
+        weeks: normalizeWeekCollection(this.getAllWeeks()),
+        settings: this.getSettings(),
+        customFoods: this.getCustomFoods(),
+        favorites: this.getFavorites(),
+        calorieOverrides: this.getCalorieOverrides(),
+        allergenOverrides: this.getAllergenOverrides()
+      }
+    }, null, 2);
+  },
+
+  importBackup(jsonStr) {
+    try {
+      const payload = JSON.parse(jsonStr);
+      if (!payload || payload.type !== FULL_BACKUP_TYPE || payload.version !== FULL_BACKUP_VERSION) {
+        throw new Error('Bu dosya Kalori Hesapla tam yedeği değil');
+      }
+
+      const source = payload.data;
+      if (!source || typeof source !== 'object' || Array.isArray(source)) {
+        throw new Error('Yedek verisi eksik veya geçersiz');
+      }
+
+      const incomingWeeks = normalizeWeekCollection(source.weeks);
+      const incomingCustomFoods = normalizeCustomFoodList(source.customFoods);
+      const incomingFavorites = normalizeFavoriteIds(source.favorites);
+      const incomingCalorieOverrides = normalizeCalorieOverrides(source.calorieOverrides);
+      const incomingAllergenOverrides = normalizeAllergenOverrides(source.allergenOverrides);
+      const hasIncomingSettings = source.settings && typeof source.settings === 'object' && !Array.isArray(source.settings);
+
+      const customFoodMap = new Map(this.getCustomFoods().map(food => [food.id, food]));
+      incomingCustomFoods.forEach(food => customFoodMap.set(food.id, food));
+
+      const favorites = normalizeFavoriteIds([...this.getFavorites(), ...incomingFavorites]);
+      const weeks = { ...normalizeWeekCollection(this.getAllWeeks()), ...incomingWeeks };
+      const calorieOverrides = { ...this.getCalorieOverrides(), ...incomingCalorieOverrides };
+      const allergenOverrides = { ...this.getAllergenOverrides(), ...incomingAllergenOverrides };
+      const settings = hasIncomingSettings
+        ? normalizeSettings({ ...this.getSettings(), ...source.settings })
+        : this.getSettings();
+
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(weeks));
+      localStorage.setItem(SETTINGS_KEY, JSON.stringify(settings));
+      localStorage.setItem(CUSTOM_FOODS_KEY, JSON.stringify([...customFoodMap.values()]));
+      localStorage.setItem(FAVORITES_KEY, JSON.stringify(favorites));
+      localStorage.setItem(CALORIE_OVERRIDES_KEY, JSON.stringify(calorieOverrides));
+      localStorage.setItem(ALLERGEN_OVERRIDES_KEY, JSON.stringify(allergenOverrides));
+
+      return {
+        success: true,
+        importedWeeks: Object.keys(incomingWeeks).length,
+        importedCustomFoods: incomingCustomFoods.length,
+        importedFavorites: incomingFavorites.length,
+        importedCalorieOverrides: Object.keys(incomingCalorieOverrides).length,
+        importedAllergenOverrides: Object.keys(incomingAllergenOverrides).length,
+        lastWeekId: settings.lastWeekId
+      };
+    } catch (error) {
+      return { success: false, error: error.message };
+    }
+  },
+
   removeFoodReferencesFromWeeks(foodId) {
     const normalizedId = getTrimmedString(foodId);
     if (!normalizedId) return [];
@@ -457,6 +526,16 @@ function normalizeWeekData(weekData, weekId) {
     createdAt: getTrimmedString(weekData.createdAt) || new Date().toISOString(),
     updatedAt: getTrimmedString(weekData.updatedAt) || new Date().toISOString()
   };
+}
+
+function normalizeWeekCollection(weeks) {
+  if (!weeks || typeof weeks !== 'object' || Array.isArray(weeks)) return {};
+
+  return Object.entries(weeks).reduce((normalizedWeeks, [weekId, weekData]) => {
+    const normalizedWeek = normalizeWeekData(weekData, weekId);
+    if (normalizedWeek) normalizedWeeks[weekId] = normalizedWeek;
+    return normalizedWeeks;
+  }, {});
 }
 
 function normalizeCustomFood(food) {

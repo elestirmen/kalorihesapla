@@ -12,6 +12,7 @@ let activeTab = 'planner';
 let foodMgmtFilter = { query: '', category: 'all', allergenId: '', allergenMode: 'all' };
 let editingAllergenFoodId = null;
 let saveTimeout = null;
+let helpLastFocusedElement = null;
 
 const PORTION_OPTIONS = [0.5, 1, 1.5, 2];
 const AUTO_FILL_SLOT_COUNT = 4;
@@ -125,6 +126,9 @@ function cacheDOM() {
   DOM.foodCategoryFilter = document.getElementById('food-category-filter');
   DOM.foodAllergenFilterId = document.getElementById('food-allergen-filter-id');
   DOM.foodAllergenFilterMode = document.getElementById('food-allergen-filter-mode');
+  DOM.helpOverlay = document.getElementById('help-overlay');
+  DOM.helpDialog = DOM.helpOverlay?.querySelector('.help-dialog');
+  DOM.helpClose = document.getElementById('btn-close-help');
 }
 
 function initApp() {
@@ -197,6 +201,14 @@ function bindEvents() {
   document.getElementById('btn-export')?.addEventListener('click', exportCurrentWeek);
   document.getElementById('btn-export-excel')?.addEventListener('click', exportExcel);
   document.getElementById('btn-import')?.addEventListener('click', importWeek);
+  document.getElementById('btn-backup-all')?.addEventListener('click', exportFullBackup);
+  document.getElementById('btn-restore-all')?.addEventListener('click', importFullBackup);
+  document.getElementById('btn-help')?.addEventListener('click', openHelp);
+  DOM.helpClose?.addEventListener('click', closeHelp);
+  DOM.helpOverlay?.addEventListener('click', event => {
+    if (event.target === DOM.helpOverlay) closeHelp();
+  });
+  DOM.helpOverlay?.addEventListener('keydown', trapHelpFocus);
 
   DOM.foodSearch?.addEventListener('input', event => {
     foodMgmtFilter.query = event.target.value;
@@ -238,11 +250,13 @@ function bindEvents() {
     if (event.key === 'Escape') {
       closeSearch();
       closeWeeksDropdown();
+      closeHelp();
     }
   });
 
   document.addEventListener('click', event => {
     if (!event.target.closest('.saved-weeks-wrapper')) closeWeeksDropdown();
+    if (!event.target.closest('.header-backup')) document.getElementById('backup-actions')?.removeAttribute('open');
   });
 
   document.addEventListener('change', event => {
@@ -254,6 +268,46 @@ function bindEvents() {
       syncAllergenEditorPriorities(event.target);
     }
   });
+
+  window.addEventListener('pagehide', persistCurrentWeek);
+  document.addEventListener('visibilitychange', () => {
+    if (document.visibilityState === 'hidden') persistCurrentWeek();
+  });
+}
+
+function openHelp() {
+  if (!DOM.helpOverlay) return;
+  helpLastFocusedElement = document.activeElement;
+  DOM.helpOverlay.classList.add('active');
+  DOM.helpOverlay.setAttribute('aria-hidden', 'false');
+  document.body.classList.add('help-open');
+  DOM.helpDialog?.focus();
+}
+
+function closeHelp() {
+  if (!DOM.helpOverlay?.classList.contains('active')) return;
+  DOM.helpOverlay.classList.remove('active');
+  DOM.helpOverlay.setAttribute('aria-hidden', 'true');
+  document.body.classList.remove('help-open');
+  if (helpLastFocusedElement && typeof helpLastFocusedElement.focus === 'function') {
+    helpLastFocusedElement.focus();
+  }
+  helpLastFocusedElement = null;
+}
+
+function trapHelpFocus(event) {
+  if (event.key !== 'Tab' || !DOM.helpOverlay?.classList.contains('active')) return;
+  const focusable = [...DOM.helpOverlay.querySelectorAll('a[href], button:not([disabled]), [tabindex]:not([tabindex="-1"])')];
+  if (!focusable.length) return;
+  const first = focusable[0];
+  const last = focusable[focusable.length - 1];
+  if (event.shiftKey && document.activeElement === first) {
+    event.preventDefault();
+    last.focus();
+  } else if (!event.shiftKey && document.activeElement === last) {
+    event.preventDefault();
+    first.focus();
+  }
 }
 
 function switchTab(tab) {
@@ -284,10 +338,10 @@ function renderAllergenPreferences() {
 
   if (DOM.allergenPreferencesGrid) {
     DOM.allergenPreferencesGrid.innerHTML = Object.entries(ALLERGENS).map(([id, allergen]) => {
-      const label = `${allergen.icon} ${allergen.name}`;
+      const label = `${allergen.icon} ${allergen.name} [${id}]`;
       return `<label class="allergen-preference" title="${escapeHtml(label)}">
         <input type="checkbox" data-avoided-allergen="${escapeHtml(id)}" aria-label="${escapeHtml(`${allergen.name} alerjeninden kaçın`)}" ${avoided.has(id) ? 'checked' : ''}>
-        <span>${allergen.icon} ${escapeHtml(allergen.name)}</span>
+        <span class="allergen-choice-label"><span>${allergen.icon} ${escapeHtml(allergen.name)}</span><code class="allergen-technical-code">${escapeHtml(id)}</code></span>
       </label>`;
     }).join('');
   }
@@ -336,7 +390,7 @@ function renderFoodAllergenFilterOptions() {
   DOM.foodAllergenFilterId.innerHTML = [
     '<option value="">Alerjen seçin</option>',
     ...Object.entries(ALLERGENS).map(([id, allergen]) => (
-      `<option value="${escapeHtml(id)}">${allergen.icon} ${escapeHtml(allergen.name)}</option>`
+      `<option value="${escapeHtml(id)}">${allergen.icon} ${escapeHtml(allergen.name)} [${escapeHtml(id)}]</option>`
     ))
   ].join('');
   DOM.foodAllergenFilterId.value = foodMgmtFilter.allergenId;
@@ -354,10 +408,10 @@ function renderAllergenCheckboxGroup(editorId, group, label, selectedIds, modifi
     <div class="allergen-editor-options">
       ${Object.entries(ALLERGENS).map(([allergenId, allergen]) => {
         const inputId = `${editorId}-${group}-${allergenId}`;
-        const fullLabel = `${label}: ${allergen.name}`;
+        const fullLabel = `${label}: ${allergen.name} [${allergenId}]`;
         return `<label class="allergen-editor-choice" for="${escapeHtml(inputId)}" title="${escapeHtml(fullLabel)}">
           <input id="${escapeHtml(inputId)}" type="checkbox" data-allergen-editor-group="${group}" data-allergen-id="${allergenId}" aria-label="${escapeHtml(fullLabel)}" ${selected.has(allergenId) ? 'checked' : ''}>
-          <span>${allergen.icon} ${escapeHtml(allergen.shortName)}</span>
+          <span class="allergen-choice-label"><span>${allergen.icon} ${escapeHtml(allergen.shortName)}</span><code class="allergen-technical-code">${escapeHtml(allergenId)}</code></span>
         </label>`;
       }).join('')}
     </div>
@@ -459,7 +513,7 @@ function syncAllergenEditorPriorities(input) {
 }
 
 function formatCompactAllergenNames(ids, limit = 2) {
-  const names = ids.map(id => ALLERGENS[id]?.shortName).filter(Boolean);
+  const names = ids.map(id => ALLERGENS[id] ? `${ALLERGENS[id].shortName} [${id}]` : '').filter(Boolean);
   if (names.length <= limit) return names.join(', ');
   return `${names.slice(0, limit).join(', ')} +${names.length - limit}`;
 }
@@ -1000,12 +1054,7 @@ function animateNumber(element, target) {
 }
 
 function autoSave() {
-  clearTimeout(saveTimeout);
-  const weekIdSnapshot = currentWeekId;
-  const weekSnapshot = JSON.parse(JSON.stringify(currentWeek));
-  saveTimeout = setTimeout(() => {
-    Storage.saveWeek(weekIdSnapshot, weekSnapshot);
-  }, 300);
+  persistCurrentWeek();
 }
 
 function exportCurrentWeek() {
@@ -1015,6 +1064,61 @@ function exportCurrentWeek() {
 
   downloadBlob(new Blob([json], { type: 'application/json' }), `menu_${currentWeek.startDate}.json`);
   showToast('JSON olarak dışa aktarıldı', 'success');
+}
+
+function exportFullBackup() {
+  persistCurrentWeek();
+  const json = Storage.exportBackup();
+  const date = new Date().toISOString().slice(0, 10);
+  downloadBlob(new Blob([json], { type: 'application/json' }), `kalori_tam_yedek_${date}.json`);
+  document.getElementById('backup-actions')?.removeAttribute('open');
+  showToast('Tüm veriler JSON yedeğine kaydedildi', 'success');
+}
+
+function importFullBackup() {
+  const input = document.createElement('input');
+  input.type = 'file';
+  input.accept = '.json,application/json';
+  input.onchange = event => {
+    const file = event.target.files[0];
+    if (!file) return;
+    if (!confirm('Yedekteki veriler mevcut kayıtlarla birleştirilecek. Aynı haftalar yedekteki sürümle güncellenecek. Devam edilsin mi?')) return;
+
+    const reader = new FileReader();
+    reader.onload = loadEvent => {
+      persistCurrentWeek();
+      const result = Storage.importBackup(loadEvent.target.result);
+      if (!result.success) {
+        showToast(`Yedek yüklenemedi: ${result.error}`, 'error');
+        return;
+      }
+
+      const weekId = (result.lastWeekId && Storage.getWeek(result.lastWeekId))
+        ? result.lastWeekId
+        : Storage.getWeekList()[0]?.id;
+
+      if (weekId) {
+        currentWeekId = weekId;
+        currentWeek = Storage.getWeek(weekId);
+        Storage.saveSettings({ lastWeekId: weekId });
+      } else {
+        createNewWeekFromDate(new Date());
+      }
+
+      if (DOM.goalInput) DOM.goalInput.value = Storage.getSettings().dailyCalorieGoal;
+      renderAllergenPreferences();
+      renderFoodAllergenFilterOptions();
+      renderNewFoodAllergenEditor();
+      renderWeek();
+      updateStats();
+      if (activeTab === 'foods') renderFoodList();
+
+      document.getElementById('backup-actions')?.removeAttribute('open');
+      showToast(`${result.importedWeeks} hafta ve tüm uygulama verileri yüklendi`, 'success');
+    };
+    reader.readAsText(file);
+  };
+  input.click();
 }
 
 function exportExcel() {

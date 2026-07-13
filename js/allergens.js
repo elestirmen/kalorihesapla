@@ -850,12 +850,13 @@ function normalizeAllergenPreferences(preferences) {
 }
 
 function getAllergenLabel(allergenId) {
-  return ALLERGENS[allergenId]?.name || "";
+  const allergen = ALLERGENS[allergenId];
+  return allergen ? `${allergen.name} [${allergenId}]` : "";
 }
 
 function getAllergenShortLabel(allergenId) {
   const allergen = ALLERGENS[allergenId];
-  return allergen ? `${allergen.icon} ${allergen.shortName}` : "";
+  return allergen ? `${allergen.icon} ${allergen.shortName} [${allergenId}]` : "";
 }
 
 function getFoodAllergenInfo(food, knownOverrides) {
