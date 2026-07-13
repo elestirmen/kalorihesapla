@@ -2653,33 +2653,160 @@ summary.btn:focus-visible {
 
 .allergen-editor {
   margin-top: 12px;
-  padding: 12px;
+  padding: 16px;
+}
+
+.allergen-editor-inline {
+  border-color: rgba(54, 116, 122, 0.24);
+  border-radius: var(--radius-md);
+  background: var(--bg-surface);
+  box-shadow: 0 8px 24px rgba(44, 62, 64, 0.07);
+}
+
+.allergen-editor-heading {
+  margin-bottom: 14px;
+}
+
+.allergen-editor-heading > strong {
+  display: block;
+  margin-bottom: 3px;
+  color: var(--text-primary);
+  font-size: 1rem;
+  line-height: 1.3;
 }
 
 .allergen-editor-help {
-  margin-bottom: 9px;
+  margin: 0;
   color: var(--text-secondary);
-  font-size: 0.76rem;
-  line-height: 1.4;
+  font-size: 0.86rem;
+  line-height: 1.5;
 }
 
 .allergen-editor-primary .allergen-editor-group {
-  padding: 10px;
+  padding: 12px;
 }
 
 .allergen-editor-primary .allergen-editor-options {
-  grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+}
+
+.allergen-editor-group {
+  border-radius: var(--radius-md);
+  background: var(--bg-base);
+}
+
+.allergen-editor-group legend {
+  max-width: calc(100% - 10px);
+  padding: 0 6px;
+  font-size: inherit;
+}
+
+.allergen-editor-legend {
+  display: inline-flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: 2px;
+  white-space: normal;
+}
+
+.allergen-editor-legend strong {
+  color: var(--text-primary);
+  font-size: 0.88rem;
+  line-height: 1.3;
+}
+
+.allergen-editor-legend small {
+  color: var(--text-muted);
+  font-size: 0.72rem;
+  font-weight: 500;
+  line-height: 1.35;
+}
+
+.allergen-editor-options {
+  gap: 6px;
 }
 
 .allergen-editor-choice {
-  min-height: 30px;
-  padding: 4px 6px;
+  min-height: 42px;
+  padding: 7px 9px;
+  border: 1px solid transparent;
   border-radius: var(--radius-sm);
+  font-size: 0.84rem;
+  line-height: 1.3;
+  transition: border-color 120ms ease, background-color 120ms ease;
+}
+
+.allergen-editor-choice input {
+  width: 18px;
+  height: 18px;
+  flex: 0 0 auto;
+  accent-color: var(--accent);
+}
+
+.allergen-editor-choice .allergen-choice-label,
+.allergen-editor-choice .allergen-choice-label > span {
+  overflow: visible;
+  text-overflow: clip;
+  white-space: normal;
+}
+
+.allergen-editor .allergen-technical-code {
+  font-size: 0.68rem;
 }
 
 .allergen-editor-choice:hover,
 .allergen-editor-choice:has(input:checked) {
   background: var(--bg-input);
+}
+
+.allergen-editor-choice:has(input:focus-visible),
+.allergen-editor-advanced > summary:focus-visible {
+  outline: 3px solid rgba(54, 116, 122, 0.2);
+  outline-offset: 2px;
+}
+
+.allergen-editor-group.contains .allergen-editor-choice:has(input:checked) {
+  border-color: rgba(192, 57, 43, 0.28);
+  background: var(--danger-bg);
+}
+
+.allergen-editor-group.possible .allergen-editor-choice:has(input:checked) {
+  border-color: rgba(217, 112, 22, 0.3);
+  background: var(--accent-glow);
+}
+
+.allergen-editor-group.may-contain .allergen-editor-choice:has(input:checked) {
+  border-color: rgba(181, 138, 26, 0.32);
+  background: rgba(181, 138, 26, 0.1);
+}
+
+.allergen-editor-advanced > summary {
+  display: grid;
+  min-height: 52px;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  column-gap: 12px;
+  padding: 10px 12px;
+  font-size: 0.86rem;
+}
+
+.allergen-editor-advanced > summary > span {
+  color: var(--text-primary);
+}
+
+.allergen-editor-advanced > summary > small {
+  grid-column: 1;
+  color: var(--text-muted);
+  font-size: 0.72rem;
+  font-weight: 500;
+  line-height: 1.35;
+}
+
+.allergen-editor-advanced > summary::after {
+  grid-column: 2;
+  grid-row: 1 / span 2;
+  align-self: center;
+  font-size: 1rem;
 }
 
 .allergen-editor-advanced .allergen-editor-groups {
@@ -2691,6 +2818,22 @@ summary.btn:focus-visible {
 .allergen-editor-advanced .allergen-editor-meta {
   margin: 0;
   padding: 0 10px 10px;
+}
+
+.allergen-editor-meta .allergen-status,
+.allergen-editor-meta .allergen-note {
+  gap: 7px;
+  color: var(--text-primary);
+  font-size: 0.84rem;
+}
+
+.allergen-editor-meta .form-input {
+  min-height: 42px;
+  font-size: 0.88rem;
+}
+
+.allergen-editor-meta textarea.form-input {
+  line-height: 1.45;
 }
 
 .food-mgmt-item {
@@ -2716,8 +2859,8 @@ summary.btn:focus-visible {
   display: block;
   overflow: hidden;
   color: var(--text-secondary);
-  font-size: 0.7rem;
-  line-height: 1.35;
+  font-size: 0.78rem;
+  line-height: 1.4;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
@@ -2741,7 +2884,9 @@ summary.btn:focus-visible {
 }
 
 .food-mgmt-allergen-edit {
-  padding: 5px 8px;
+  min-height: 36px;
+  padding: 7px 10px;
+  font-size: 0.78rem;
 }
 
 .food-slot.filled {
@@ -2840,6 +2985,18 @@ summary.btn:focus-visible {
     padding: 11px;
   }
 
+  .allergen-editor {
+    padding: 13px;
+  }
+
+  .allergen-editor-heading > strong {
+    font-size: 0.96rem;
+  }
+
+  .allergen-editor-help {
+    font-size: 0.84rem;
+  }
+
   .allergen-settings-grid,
   .allergen-editor-primary .allergen-editor-options {
     grid-template-columns: 1fr 1fr;
@@ -2909,8 +3066,21 @@ summary.btn:focus-visible {
   }
 
   .allergen-settings-grid,
-  .allergen-editor-primary .allergen-editor-options {
+  .allergen-editor .allergen-editor-options {
     grid-template-columns: 1fr;
+  }
+
+  .allergen-editor {
+    padding: 11px;
+  }
+
+  .allergen-editor-choice {
+    min-height: 46px;
+    font-size: 0.88rem;
+  }
+
+  .allergen-editor .allergen-technical-code {
+    font-size: 0.7rem;
   }
 
   .allergen-settings-summary-value {

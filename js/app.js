@@ -403,8 +403,13 @@ function getFoodAllergenEditorId(foodId) {
 
 function renderAllergenCheckboxGroup(editorId, group, label, selectedIds, modifierClass) {
   const selected = new Set(selectedIds);
+  const descriptions = {
+    contains: 'Tarifte kesin olarak bulunanlar',
+    possibleContains: 'Tarife veya ürüne göre değişebilenler',
+    mayContain: 'Mutfak ya da üretim kaynaklı riskler'
+  };
   return `<fieldset class="allergen-editor-group ${modifierClass}">
-    <legend>${escapeHtml(label)}</legend>
+    <legend><span class="allergen-editor-legend"><strong>${escapeHtml(label)}</strong><small>${escapeHtml(descriptions[group] || '')}</small></span></legend>
     <div class="allergen-editor-options">
       ${Object.entries(ALLERGENS).map(([allergenId, allergen]) => {
         const inputId = `${editorId}-${group}-${allergenId}`;
@@ -428,12 +433,15 @@ function getAllergenEditorMarkup(editorId, allergenInfo, actionHtml = '') {
   const advancedCount = info.possibleContains.length + info.mayContain.length + (info.note ? 1 : 0);
 
   return `<div class="allergen-editor-content" data-allergen-editor-id="${escapeHtml(editorId)}">
-    <p class="allergen-editor-help">Yemeğin içerdiğini bildiğiniz alerjenleri seçin. Bilgi yoksa boş bırakın.</p>
+    <div class="allergen-editor-heading">
+      <strong>Alerjen bilgileri</strong>
+      <p class="allergen-editor-help">Yemeğin içerdiğini bildiğiniz alerjenleri seçin. Emin olmadığınız bilgileri aşağıdaki “diğer riskler” bölümüne ekleyin.</p>
+    </div>
     <div class="allergen-editor-primary">
       ${renderAllergenCheckboxGroup(editorId, 'contains', 'İçerdiği Alerjenler', info.contains, 'contains')}
     </div>
     <details class="allergen-editor-advanced">
-      <summary>Tarif, çapraz temas ve not${advancedCount ? ` (${advancedCount})` : ''}</summary>
+      <summary><span>Diğer riskler ve kaynak bilgisi${advancedCount ? ` (${advancedCount})` : ''}</span><small>Olası içerik, çapraz temas ve açıklamalar</small></summary>
       <div class="allergen-editor-groups">
         ${renderAllergenCheckboxGroup(editorId, 'possibleContains', 'Tarife Göre Bulunabilir', info.possibleContains, 'possible')}
         ${renderAllergenCheckboxGroup(editorId, 'mayContain', 'Çapraz Temas Uyarısı', info.mayContain, 'may-contain')}
