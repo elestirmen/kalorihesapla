@@ -95,7 +95,7 @@
       await test('Yerleşik yemek override sıfırlaması çalışır', () => {
         assert(Storage.removeAllergenOverride('mantu'));
         const info = getFoodAllergenInfo(getFoodById('mantu'));
-        assert(info.contains.includes('milk') && info.contains.includes('gluten_cereals'));
+        assert(info.contains.includes('milk') && info.contains.includes('gluten_cereals') && info.contains.includes('egg'));
       });
 
       await test('Özel yemek alerjen bilgisi saklamada korunur', () => {
@@ -116,7 +116,7 @@
       });
 
       await test('possibleContains tercihe göre dikkate alınır', () => {
-        const food = getFoodById('bulgur_pilavi');
+        const food = getFoodById('tarhana_corbasi');
         assert(!isFoodAllowedByAllergenPreferences(food, { ...DEFAULT_ALLERGEN_PREFERENCES, avoidedAllergens: ['milk'] }));
         assert(isFoodAllowedByAllergenPreferences(food, { ...DEFAULT_ALLERGEN_PREFERENCES, avoidedAllergens: ['milk'], treatPossibleContainsAsUnsafe: false }));
       });
@@ -308,12 +308,17 @@
         assert(getFoodById('tatli_eksi_soslu_tavuk').calories === 380);
       });
 
-      await test('Güncel malzeme listesindeki kesin alerjenler işaretlenir', () => {
-        assert(getFoodAllergenInfo(getFoodById('piyaz')).contains.includes('sesame'));
+      await test('Excel’de açıkça belirtilen kesin alerjenler işaretlenir', () => {
+        assert(getFoodAllergenInfo(getFoodById('piyaz')).status === 'unknown');
         assert(getFoodAllergenInfo(getFoodById('gavurdagi_salatasi')).contains.includes('tree_nuts'));
         assert(getFoodAllergenInfo(getFoodById('izgara_tavuk_kanat')).contains.includes('mustard'));
         assert(getFoodAllergenInfo(getFoodById('toyga_corbasi')).contains.includes('egg'));
-        assert(getFoodAllergenInfo(getFoodById('sebzeli_kuskus_pilavi')).contains.includes('gluten_cereals'));
+        assert(getFoodAllergenInfo(getFoodById('sebzeli_kuskus_pilavi')).contains.includes('milk'));
+      });
+
+      await test('Excel’de olmayan yemek boş unknown profil alır', () => {
+        const info = getFoodAllergenInfo(getFoodById('dugun_corbasi'));
+        assert(info.status === 'unknown' && info.contains.length === 0 && info.possibleContains.length === 0 && info.mayContain.length === 0);
       });
 
       await test('Mevcut kalori hesabı çalışır', () => {
