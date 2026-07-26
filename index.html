@@ -10,6 +10,21 @@
 </head>
 <body>
 
+  <div class="auth-overlay" id="auth-overlay" hidden>
+    <form class="auth-card" id="auth-form">
+      <div class="auth-icon" aria-hidden="true">🍽️</div>
+      <h1 id="auth-title">Giriş yap</h1>
+      <p>Menü ve ayarlarınız hesabınıza kaydedilir.</p>
+      <label for="auth-username">Kullanıcı adı</label>
+      <input id="auth-username" autocomplete="username" required maxlength="32" autofocus>
+      <label for="auth-password">Parola</label>
+      <input id="auth-password" type="password" autocomplete="current-password" required minlength="4">
+      <p class="auth-error" id="auth-error" role="alert"></p>
+      <button class="btn btn-primary" id="auth-submit" type="submit">Giriş yap</button>
+      <button class="auth-switch" id="auth-switch" type="button">Yeni kullanıcı oluştur</button>
+    </form>
+  </div>
+
   <!-- ══════════ HEADER ══════════ -->
   <header class="app-header">
     <div class="header-content">
@@ -67,6 +82,10 @@
         <button class="btn header-help-btn" id="btn-help" type="button" title="Kullanım yardımını aç" aria-haspopup="dialog" aria-controls="help-overlay">
           <span class="header-help-icon" aria-hidden="true">?</span><span>Yardım</span>
         </button>
+        <div class="user-menu">
+          <span id="current-username"></span>
+          <button class="btn" id="btn-logout" type="button">Çıkış</button>
+        </div>
       </div>
     </div>
   </header>

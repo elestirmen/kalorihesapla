@@ -87,8 +87,18 @@ const AUTO_FILL_DAY_PATTERNS = {
 };
 const DOM = {};
 
-document.addEventListener('DOMContentLoaded', () => {
+document.addEventListener('DOMContentLoaded', async () => {
+  if (typeof Auth === 'undefined') {
+    document.body.innerHTML = '<main class="startup-error"><h1>Uygulama sunucusu gerekli</h1><p>Giriş dosyası yüklenemedi. Uygulamayı proje klasöründe <code>node server.js</code> ile başlatın ve <code>http://localhost:8080</code> adresinden açın.</p></main>';
+    return;
+  }
   cacheDOM();
+  try {
+    await Auth.requireLogin();
+  } catch (error) {
+    document.body.innerHTML = `<main class="startup-error"><h1>Giriş hizmetine ulaşılamıyor</h1><p>${escapeHtml(error.message || 'Sunucu başlatılamadı.')}</p><p>Proje klasöründe <code>node server.js</code> komutunu çalıştırıp <code>http://localhost:8080</code> adresini açın.</p></main>`;
+    return;
+  }
   initApp();
   bindEvents();
 });
@@ -129,9 +139,12 @@ function cacheDOM() {
   DOM.helpOverlay = document.getElementById('help-overlay');
   DOM.helpDialog = DOM.helpOverlay?.querySelector('.help-dialog');
   DOM.helpClose = document.getElementById('btn-close-help');
+  DOM.currentUsername = document.getElementById('current-username');
+  DOM.logout = document.getElementById('btn-logout');
 }
 
 function initApp() {
+  if (DOM.currentUsername) DOM.currentUsername.textContent = Auth.username();
   const settings = Storage.getSettings();
   if (settings.lastWeekId) {
     const savedWeek = Storage.getWeek(settings.lastWeekId);
@@ -156,6 +169,7 @@ function initApp() {
 }
 
 function bindEvents() {
+  DOM.logout?.addEventListener('click', Auth.logout);
   document.querySelectorAll('.tab-btn').forEach(btn => {
     btn.addEventListener('click', () => switchTab(btn.dataset.tab));
   });

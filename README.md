@@ -36,7 +36,7 @@ Haftalık yemek menüsü planlama ve porsiyon bazlı kalori takibi yapan, taray�
 
 ### Depolama
 
-Tüm kalıcı veri **localStorage** üzerindedir:
+Giriş yapılmış uygulamada veri hem tarayıcıda hem de sunucudaki kullanıcı hesabında saklanır. Böylece aynı hesapla farklı tarayıcıdan giriş yapıldığında menüler, ayarlar ve kişisel değişiklikler geri gelir. Yerel kopya çevrimdışı arayüz hızını korur; değişiklikler kısa bir gecikmeyle hesaba eşitlenir.
 
 | Anahtar | İçerik |
 |--------|--------|
@@ -47,12 +47,25 @@ Tüm kalıcı veri **localStorage** üzerindedir:
 | `kalori_calorie_overrides` | Yerleşik yemekler için kalori düzeltmeleri |
 | `kalori_allergen_overrides` | Yerleşik yemekler için kullanıcı alerjen profili düzenlemeleri |
 
-Tarayıcı verilerini temizlerseniz bu kayıtlar silinir; yedek için düzenli **JSON dışa aktarma** önerilir.
+Tarayıcı verilerini temizlemek hesap verisini silmez. Yedek için yine düzenli **JSON dışa aktarma** önerilir.
+
+### Herkese açık menü API'si
+
+`kun` hesabına kaydedilen bütün haftalar ayrıca işlem veya API anahtarı gerektirmeden salt okunur JSON olarak sunulur. Yanıtlar özel yemekleri, geçerli kalori ve alerjen düzenlemelerini, porsiyon çarpanlarını, öğün toplamlarını ve gün toplamlarını içerir. Diğer kullanıcıların kayıtları ve hesap ayarları bu API'ye dahil edilmez.
+
+| Uç nokta | İçerik |
+|--------|--------|
+| `GET /api/public/v1/menu/current` | İstanbul tarihine göre içinde bulunulan haftanın menüsü |
+| `GET /api/public/v1/menus` | Kayıtlı bütün haftaların menüleri |
+| `GET /api/public/v1/menus/YYYY-Www` | Belirtilen ISO haftasının menüsü |
+| `GET /api/public/v1/foods` | Geçerli kalori ve alerjen bilgileriyle bütün yemek kataloğu |
+
+Yemek kataloğu yanıtında kategori ve alerjen sözlükleriyle birlikte her yemeğin kimliği, adı, kategorisi, porsiyon açıklaması, geçerli porsiyon kalorisi, kaynak kalorisi, özel/yerleşik durumu ve ayrıntılı alerjen profili bulunur. Uç noktalar web ve mobil istemciler için `Access-Control-Allow-Origin: *` başlığı döndürür. Menü veya yemek verilerindeki her değişiklik sunucuya eşitlendikten sonra API yanıtına otomatik yansır.
 
 ## Teknolojiler
 
-- **HTML5**, **CSS3**, **Vanilla JavaScript** (derleme veya paket yöneticisi yok).
-- **localStorage** (istemci tarafı kalıcılık).
+- **HTML5**, **CSS3**, **Vanilla JavaScript** ve Node.js'in yerleşik HTTP/crypto modülleri (ek paket yok).
+- Kullanıcıya göre dosya tabanlı sunucu saklaması; parolalar `scrypt` özeti olarak saklanır.
 - **SheetJS / xlsx-js-style** (`js/xlsx-js-style.min.js`) — Excel üretimi. Lisans: `js/xlsx-js-style.LICENSE.txt`.
 
 ## Proje yapısı
@@ -63,6 +76,7 @@ kalorihesapla/
 ├── css/
 │   └── style.css       # Arayüz stilleri
 ├── js/
+│   ├── session.js       # Giriş, kullanıcı oturumu ve sunucu eşitlemesi
 │   ├── allergens.js     # AB 14 kataloğu, profiller, normalizasyon ve doğrulama
 │   ├── app.js          # Menü mantığı, arama, otomatik doldurma, Excel/JSON
 │   ├── data.js         # FOOD_CATEGORIES, BASE_FOODS, arama yardımcıları
@@ -73,26 +87,23 @@ kalorihesapla/
 │   ├── allergens.test.html # Tarayıcıda çalışan alerjen regresyon testleri
 │   └── allergens.test.js
 └── README.md
+├── server.js             # Uygulama ve API sunucusu
 ```
 
 ## Çalıştırma
 
-Uygulama statik dosyalardan oluşur. `index.html` dosyasını doğrudan dosya sisteminden açmak bazı tarayıcılarda `localStorage` veya modül güvenlik kısıtlarına takılabilir; **yerel bir HTTP sunucusu** kullanmanız önerilir.
+Uygulama kullanıcı girişi ve tarayıcılar arası kayıt için Node sunucusuyla çalıştırılmalıdır:
 
 Örnek (Python 3):
 
 ```bash
 cd /path/to/kalorihesapla
-python3 -m http.server 8080
+node server.js
 ```
 
 Tarayıcıda `http://localhost:8080` adresine gidin.
 
-Alternatif olarak Node.js ile:
-
-```bash
-npx --yes serve .
-```
+İlk açılış hesabı `kun` / `kun2026`'dır. Giriş ekranından başka kullanıcılar da oluşturulabilir. Kullanıcı kayıtları çalışma anında `data/users.json` dosyasına yazılır ve Git'e eklenmez. Üretimde `yemeklistesi-web` adlı Node container'ı Nginx Proxy Manager'ın `npm-net` ağına bağlıdır; proxy host bu container'ın 80 portuna yönlenir.
 
 ## Kullanım özeti
 

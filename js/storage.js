@@ -1,3 +1,135 @@
+const Auth = (() => {
+  const TOKEN_KEY = 'kalori_auth_token';
+  const USERNAME_KEY = 'kalori_auth_username';
+  const SYNC_KEYS = ['kalori_haftalik_menuler', 'kalori_ayarlar', 'kalori_custom_foods', 'kalori_favorites', 'kalori_calorie_overrides', 'kalori_allergen_overrides'];
+  let syncTimer = null;
+  let applyingRemoteState = false;
+
+  function token() { return sessionStorage.getItem(TOKEN_KEY) || ''; }
+  function isAuthenticated() { return Boolean(token()); }
+  function username() { return sessionStorage.getItem(USERNAME_KEY) || ''; }
+  function setSession(result) {
+    sessionStorage.setItem(TOKEN_KEY, result.token);
+    sessionStorage.setItem(USERNAME_KEY, result.username);
+  }
+
+  async function request(url, options = {}) {
+    const response = await fetch(url, {
+      ...options,
+      headers: { 'Content-Type': 'application/json', ...(options.headers || {}), ...(token() ? { Authorization: `Bearer ${token()}` } : {}) }
+    });
+    const payload = await response.json().catch(() => ({}));
+    if (!response.ok) throw new Error(payload.error || 'İşlem tamamlanamadı.');
+    return payload;
+  }
+
+  function collectState() {
+    return SYNC_KEYS.reduce((state, key) => {
+      const value = localStorage.getItem(key);
+      if (value !== null) state[key] = value;
+      return state;
+    }, {});
+  }
+
+  function applyState(state) {
+    applyingRemoteState = true;
+    try {
+      SYNC_KEYS.forEach(key => {
+        if (Object.prototype.hasOwnProperty.call(state, key)) localStorage.setItem(key, state[key]);
+        else localStorage.removeItem(key);
+      });
+    } finally {
+      applyingRemoteState = false;
+    }
+  }
+
+  async function loadState() {
+    const { state } = await request('/api/state');
+    applyState(state || {});
+  }
+
+  function scheduleSync() {
+    if (!isAuthenticated() || applyingRemoteState) return;
+    clearTimeout(syncTimer);
+    syncTimer = setTimeout(async () => {
+      try { await request('/api/state', { method: 'PUT', body: JSON.stringify({ state: collectState() }) }); }
+      catch (error) { console.warn('Veriler sunucuya kaydedilemedi:', error.message); }
+    }, 350);
+  }
+
+  function watchStorage() {
+    const prototype = Object.getPrototypeOf(localStorage);
+    const originalSetItem = prototype.setItem;
+    const originalRemoveItem = prototype.removeItem;
+    prototype.setItem = function (key, value) {
+      originalSetItem.call(this, key, value);
+      if (this === localStorage && SYNC_KEYS.includes(key)) scheduleSync();
+    };
+    prototype.removeItem = function (key) {
+      originalRemoveItem.call(this, key);
+      if (this === localStorage && SYNC_KEYS.includes(key)) scheduleSync();
+    };
+  }
+
+  async function submit(mode, usernameValue, password) {
+    const endpoint = mode === 'register' ? '/api/auth/register' : '/api/auth/login';
+    const result = await request(endpoint, { method: 'POST', body: JSON.stringify({ username: usernameValue, password }) });
+    setSession(result);
+    await loadState();
+  }
+
+  async function requireLogin() {
+    watchStorage();
+    const overlay = document.getElementById('auth-overlay');
+    const form = document.getElementById('auth-form');
+    const title = document.getElementById('auth-title');
+    const submitButton = document.getElementById('auth-submit');
+    const switchButton = document.getElementById('auth-switch');
+    const error = document.getElementById('auth-error');
+    let mode = 'login';
+    const open = () => { overlay.hidden = false; document.body.classList.add('auth-locked'); };
+    const close = () => { overlay.hidden = true; document.body.classList.remove('auth-locked'); };
+    const switchMode = () => {
+      mode = mode === 'login' ? 'register' : 'login';
+      title.textContent = mode === 'login' ? 'Giriş yap' : 'Yeni kullanıcı oluştur';
+      submitButton.textContent = mode === 'login' ? 'Giriş yap' : 'Kayıt ol';
+      switchButton.textContent = mode === 'login' ? 'Yeni kullanıcı oluştur' : 'Giriş ekranına dön';
+      error.textContent = '';
+    };
+
+    if (isAuthenticated()) {
+      try { await loadState(); close(); return; }
+      catch { sessionStorage.clear(); }
+    }
+    open();
+    switchButton.addEventListener('click', switchMode);
+    return new Promise(resolve => form.addEventListener('submit', async event => {
+      event.preventDefault();
+      error.textContent = '';
+      submitButton.disabled = true;
+      try {
+        await submit(mode, document.getElementById('auth-username').value, document.getElementById('auth-password').value);
+        close();
+        resolve();
+      } catch (err) {
+        error.textContent = err.message;
+      } finally {
+        submitButton.disabled = false;
+      }
+    }));
+  }
+
+  async function logout() {
+    try { await request('/api/auth/logout', { method: 'POST', body: '{}' }); } catch {}
+    sessionStorage.removeItem(TOKEN_KEY);
+    sessionStorage.removeItem(USERNAME_KEY);
+    location.reload();
+  }
+
+  return { requireLogin, logout, username, scheduleSync };
+})();
+
+
 /**
  * localStorage Yonetim Modulu
  * Haftalik menuler, ozel yemekler, favoriler, kalori hedefi
