@@ -13,6 +13,7 @@ let foodMgmtFilter = { query: '', category: 'all', allergenId: '', allergenMode:
 let editingAllergenFoodId = null;
 let saveTimeout = null;
 let helpLastFocusedElement = null;
+let auditLoadSequence = 0;
 
 const PORTION_OPTIONS = [0.5, 1, 1.5, 2];
 const AUTO_FILL_SLOT_COUNT = 4;
@@ -121,6 +122,7 @@ function cacheDOM() {
   DOM.goalInput = document.getElementById('goal-input');
   DOM.tabPlanner = document.getElementById('tab-planner');
   DOM.tabFoods = document.getElementById('tab-foods');
+  DOM.tabLogs = document.getElementById('tab-logs');
   DOM.plannerControls = document.getElementById('planner-controls');
   DOM.plannerActions = document.getElementById('planner-actions');
   DOM.foodSearch = document.getElementById('food-mgmt-search');
@@ -141,6 +143,12 @@ function cacheDOM() {
   DOM.helpClose = document.getElementById('btn-close-help');
   DOM.currentUsername = document.getElementById('current-username');
   DOM.logout = document.getElementById('btn-logout');
+  DOM.auditList = document.getElementById('audit-log-list');
+  DOM.auditSummary = document.getElementById('audit-summary');
+  DOM.auditCategory = document.getElementById('audit-category');
+  DOM.auditFrom = document.getElementById('audit-from');
+  DOM.auditTo = document.getElementById('audit-to');
+  DOM.auditSearch = document.getElementById('audit-search');
 }
 
 function initApp() {
@@ -211,7 +219,10 @@ function bindEvents() {
 
   document.getElementById('btn-auto-fill')?.addEventListener('click', autoFillWeek);
   document.getElementById('btn-clear-week')?.addEventListener('click', clearWeekMeals);
-  document.getElementById('btn-print')?.addEventListener('click', () => window.print());
+  document.getElementById('btn-print')?.addEventListener('click', () => {
+    Auth.logEvent('print', currentWeekId, currentWeek?.label || '');
+    window.print();
+  });
   document.getElementById('btn-export')?.addEventListener('click', exportCurrentWeek);
   document.getElementById('btn-export-excel')?.addEventListener('click', exportExcel);
   document.getElementById('btn-import')?.addEventListener('click', importWeek);
@@ -223,6 +234,11 @@ function bindEvents() {
     if (event.target === DOM.helpOverlay) closeHelp();
   });
   DOM.helpOverlay?.addEventListener('keydown', trapHelpFocus);
+  document.getElementById('btn-refresh-logs')?.addEventListener('click', renderAuditLogs);
+  [DOM.auditCategory, DOM.auditFrom, DOM.auditTo].forEach(element => {
+    element?.addEventListener('change', renderAuditLogs);
+  });
+  DOM.auditSearch?.addEventListener('input', debounce(renderAuditLogs, 250));
 
   DOM.foodSearch?.addEventListener('input', event => {
     foodMgmtFilter.query = event.target.value;
@@ -332,13 +348,80 @@ function switchTab(tab) {
 
   DOM.tabPlanner?.classList.toggle('hidden', tab !== 'planner');
   DOM.tabFoods?.classList.toggle('hidden', tab !== 'foods');
+  DOM.tabLogs?.classList.toggle('hidden', tab !== 'logs');
   DOM.plannerControls?.classList.toggle('hidden', tab !== 'planner');
   DOM.plannerActions?.classList.toggle('hidden', tab !== 'planner');
 
   if (tab === 'foods') renderFoodList();
+  if (tab === 'logs') renderAuditLogs();
   if (tab === 'planner') {
     renderWeek();
     updateStats();
+  }
+}
+
+function formatAuditValue(value) {
+  if (value === null || value === undefined || value === '') return '—';
+  if (typeof value === 'string') return value;
+  if (typeof value === 'boolean') return value ? 'Evet' : 'Hayır';
+  try { return JSON.stringify(value, null, 2); }
+  catch { return String(value); }
+}
+
+function debounce(callback, delay) {
+  let timer = null;
+  return (...args) => {
+    clearTimeout(timer);
+    timer = setTimeout(() => callback(...args), delay);
+  };
+}
+
+function auditChangeHtml(log) {
+  if (log.before === null && log.after === null) return escapeHtml(log.detail || '—');
+  const before = formatAuditValue(log.before);
+  const after = formatAuditValue(log.after);
+  return `<details class="audit-change">
+    <summary>Önce / sonra</summary>
+    <div><strong>Önce</strong><pre>${escapeHtml(before)}</pre></div>
+    <div><strong>Sonra</strong><pre>${escapeHtml(after)}</pre></div>
+  </details>`;
+}
+
+async function renderAuditLogs() {
+  if (!DOM.auditList || !DOM.auditSummary) return;
+  const sequence = ++auditLoadSequence;
+  DOM.auditSummary.textContent = 'Kayıtlar yükleniyor…';
+  DOM.auditList.innerHTML = '<tr><td colspan="6" class="audit-empty">Yükleniyor…</td></tr>';
+  try {
+    const result = await Auth.getAuditLogs({
+      category: DOM.auditCategory?.value,
+      from: DOM.auditFrom?.value,
+      to: DOM.auditTo?.value,
+      search: DOM.auditSearch?.value,
+      limit: 500
+    });
+    if (sequence !== auditLoadSequence) return;
+    const logs = Array.isArray(result.logs) ? result.logs : [];
+    DOM.auditSummary.textContent = `${logs.length} işlem kaydı gösteriliyor. Kayıtlar en yeniden eskiye sıralıdır.`;
+    DOM.auditList.innerHTML = logs.length ? logs.map(log => {
+      const timestamp = new Date(log.timestamp);
+      const dateText = Number.isNaN(timestamp.getTime())
+        ? log.timestamp
+        : timestamp.toLocaleString('tr-TR');
+      const connection = [log.ip, log.userAgent].filter(Boolean).join('\n');
+      return `<tr>
+        <td class="audit-date">${escapeHtml(dateText)}</td>
+        <td>${escapeHtml(log.actor || '—')}</td>
+        <td><span class="audit-category audit-category-${escapeHtml(log.category)}">${escapeHtml(log.action)}</span></td>
+        <td><strong>${escapeHtml(log.target || '—')}</strong>${log.detail ? `<small>${escapeHtml(log.detail)}</small>` : ''}</td>
+        <td>${auditChangeHtml(log)}</td>
+        <td class="audit-connection" title="${escapeHtml(connection)}">${escapeHtml(log.ip || '—')}</td>
+      </tr>`;
+    }).join('') : '<tr><td colspan="6" class="audit-empty">Bu filtrelere uygun işlem kaydı bulunamadı.</td></tr>';
+  } catch (error) {
+    if (sequence !== auditLoadSequence) return;
+    DOM.auditSummary.textContent = 'İşlem geçmişi yüklenemedi.';
+    DOM.auditList.innerHTML = `<tr><td colspan="6" class="audit-empty">${escapeHtml(error.message)}</td></tr>`;
   }
 }
 
@@ -1085,6 +1168,7 @@ function exportCurrentWeek() {
   if (!json) return;
 
   downloadBlob(new Blob([json], { type: 'application/json' }), `menu_${currentWeek.startDate}.json`);
+  Auth.logEvent('export_json', currentWeekId, `menu_${currentWeek.startDate}.json`);
   showToast('JSON olarak dışa aktarıldı', 'success');
 }
 
@@ -1093,6 +1177,7 @@ function exportFullBackup() {
   const json = Storage.exportBackup();
   const date = new Date().toISOString().slice(0, 10);
   downloadBlob(new Blob([json], { type: 'application/json' }), `kalori_tam_yedek_${date}.json`);
+  Auth.logEvent('backup_export', 'Tüm uygulama verileri', `kalori_tam_yedek_${date}.json`);
   document.getElementById('backup-actions')?.removeAttribute('open');
   showToast('Tüm veriler JSON yedeğine kaydedildi', 'success');
 }
@@ -1956,6 +2041,7 @@ function exportExcel() {
       { Name: '_xlnm.Print_Area', Sheet: 1, Ref: `'Plan'!$A$1:$F$${planRows.length}` }
     ];
     xlsx.writeFile(workbook, `menu_${currentWeek.startDate}.xlsx`, { bookType: 'xlsx', compression: true });
+    Auth.logEvent('export_excel', currentWeekId, `menu_${currentWeek.startDate}.xlsx`);
     showToast('Excel olarak indirildi', 'success');
     return;
   }
@@ -2102,6 +2188,7 @@ function exportExcel() {
   html += '</table></body></html>';
 
   downloadBlob(new Blob([BOM + html], { type: 'application/vnd.ms-excel;charset=utf-8' }), `menu_${currentWeek.startDate}.xls`);
+  Auth.logEvent('export_excel', currentWeekId, `menu_${currentWeek.startDate}.xls`);
   showToast('Excel olarak indirildi', 'success');
 }
 

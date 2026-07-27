@@ -8,10 +8,18 @@ const { createPublicMenuWorkbook } = require('./public-excel');
 const PORT = Number(process.env.PORT) || 8080;
 const ROOT = __dirname;
 const DATABASE_PATH = process.env.DATABASE_PATH || path.join(ROOT, 'data', 'users.json');
+const AUDIT_LOG_PATH = process.env.AUDIT_LOG_PATH || path.join(ROOT, 'data', 'audit-log.jsonl');
 const PUBLIC_MENU_USERNAME = 'kun';
 const sessions = new Map();
 const MAX_STATE_BYTES = 5 * 1024 * 1024;
 const PUBLIC_API_VERSION = '1';
+const MAX_AUDIT_ENTRIES = 5000;
+const CLIENT_AUDIT_ACTIONS = Object.freeze({
+  export_json: 'Hafta JSON olarak indirildi',
+  export_excel: 'Excel dosyası indirildi',
+  backup_export: 'Tam yedek indirildi',
+  print: 'Yazdırma ekranı açıldı'
+});
 
 function loadXlsx() {
   const context = {};
@@ -50,6 +58,230 @@ function writeDatabase(database) {
   const temporaryPath = `${DATABASE_PATH}.tmp`;
   fs.writeFileSync(temporaryPath, JSON.stringify(database, null, 2), { mode: 0o600 });
   fs.renameSync(temporaryPath, DATABASE_PATH);
+}
+
+function compactAuditValue(value) {
+  if (value === undefined) return null;
+  if (value === null || typeof value === 'boolean' || typeof value === 'number') return value;
+  if (typeof value === 'string') return value.slice(0, 500);
+  try {
+    const serialized = JSON.stringify(value);
+    return serialized.length <= 5000 ? value : `${serialized.slice(0, 4997)}...`;
+  } catch {
+    return String(value).slice(0, 500);
+  }
+}
+
+function maskIp(request) {
+  const forwarded = String(request.headers['x-forwarded-for'] || '').split(',')[0].trim();
+  const raw = forwarded || request.socket.remoteAddress || '';
+  const ipv4 = raw.replace(/^::ffff:/, '').match(/^(\d+)\.(\d+)\.(\d+)\.(\d+)$/);
+  if (ipv4) return `${ipv4[1]}.${ipv4[2]}.${ipv4[3]}.0`;
+  const groups = raw.split(':').filter(Boolean);
+  return groups.length ? `${groups.slice(0, 3).join(':')}::` : '';
+}
+
+function createAuditRecord(entry, request) {
+  return {
+    id: crypto.randomUUID(),
+    timestamp: new Date().toISOString(),
+    owner: String(entry.owner || entry.actor || 'system').slice(0, 32),
+    actor: String(entry.actor || 'system').slice(0, 32),
+    action: String(entry.action || 'İşlem').slice(0, 120),
+    category: String(entry.category || 'system').slice(0, 40),
+    target: String(entry.target || '').slice(0, 160),
+    detail: String(entry.detail || '').slice(0, 500),
+    before: compactAuditValue(entry.before),
+    after: compactAuditValue(entry.after),
+    ip: request ? maskIp(request) : '',
+    userAgent: request ? String(request.headers['user-agent'] || '').slice(0, 300) : ''
+  };
+}
+
+function appendAuditLogs(entries, request) {
+  const records = entries.map(entry => createAuditRecord(entry, request));
+  fs.mkdirSync(path.dirname(AUDIT_LOG_PATH), { recursive: true });
+  let lines = [];
+  try { lines = fs.readFileSync(AUDIT_LOG_PATH, 'utf8').trim().split('\n').filter(Boolean); } catch {}
+  lines.push(...records.map(record => JSON.stringify(record)));
+  const temporaryPath = `${AUDIT_LOG_PATH}.tmp`;
+  fs.writeFileSync(temporaryPath, `${lines.slice(-MAX_AUDIT_ENTRIES).join('\n')}\n`, { mode: 0o600 });
+  fs.renameSync(temporaryPath, AUDIT_LOG_PATH);
+  return records;
+}
+
+function appendAuditLog(entry, request) {
+  return appendAuditLogs([entry], request)[0];
+}
+
+function readAuditLogs(owner, query = {}) {
+  let records = [];
+  try {
+    records = fs.readFileSync(AUDIT_LOG_PATH, 'utf8')
+      .trim()
+      .split('\n')
+      .filter(Boolean)
+      .map(line => {
+        try { return JSON.parse(line); } catch { return null; }
+      })
+      .filter(record => record && record.owner === owner);
+  } catch {}
+
+  const category = String(query.category || '');
+  const from = String(query.from || '');
+  const to = String(query.to || '');
+  const search = String(query.search || '').toLocaleLowerCase('tr-TR').slice(0, 100);
+  if (category) records = records.filter(record => record.category === category);
+  if (/^\d{4}-\d{2}-\d{2}$/.test(from)) records = records.filter(record => record.timestamp >= `${from}T00:00:00.000Z`);
+  if (/^\d{4}-\d{2}-\d{2}$/.test(to)) records = records.filter(record => record.timestamp <= `${to}T23:59:59.999Z`);
+  if (search) {
+    records = records.filter(record => (
+      `${record.actor} ${record.action} ${record.target} ${record.detail}`.toLocaleLowerCase('tr-TR').includes(search)
+    ));
+  }
+  const limit = Math.min(Math.max(Number(query.limit) || 250, 1), 500);
+  return records.slice(-limit).reverse();
+}
+
+function stableValue(value) {
+  if (Array.isArray(value)) return value.map(stableValue);
+  if (!value || typeof value !== 'object') return value;
+  return Object.keys(value).sort().reduce((result, key) => {
+    if (key !== 'updatedAt') result[key] = stableValue(value[key]);
+    return result;
+  }, {});
+}
+
+function equalStateValue(left, right) {
+  return JSON.stringify(stableValue(left)) === JSON.stringify(stableValue(right));
+}
+
+function parsedStateValue(state, key, fallback) {
+  return safeJsonParse(state?.[key], fallback);
+}
+
+function summarizeWeek(week) {
+  const days = Array.isArray(week?.days) ? week.days : [];
+  const foodCount = days.reduce((total, day) => (
+    total + (Array.isArray(day?.lunch) ? day.lunch.filter(Boolean).length : 0)
+    + (Array.isArray(day?.dinner) ? day.dinner.filter(Boolean).length : 0)
+  ), 0);
+  return {
+    label: String(week?.label || ''),
+    startDate: String(week?.startDate || ''),
+    endDate: String(week?.endDate || ''),
+    foodCount,
+    days: days.map(day => ({
+      date: String(day?.date || ''),
+      lunch: Array.isArray(day?.lunch) ? day.lunch : [],
+      lunchPortions: Array.isArray(day?.lunchPortions) ? day.lunchPortions : [],
+      dinner: Array.isArray(day?.dinner) ? day.dinner : [],
+      dinnerPortions: Array.isArray(day?.dinnerPortions) ? day.dinnerPortions : []
+    }))
+  };
+}
+
+function diffObjectRecords(before, after, config) {
+  const entries = [];
+  const beforeMap = before && typeof before === 'object' && !Array.isArray(before) ? before : {};
+  const afterMap = after && typeof after === 'object' && !Array.isArray(after) ? after : {};
+  const keys = new Set([...Object.keys(beforeMap), ...Object.keys(afterMap)]);
+  keys.forEach(key => {
+    if (!Object.prototype.hasOwnProperty.call(beforeMap, key)) {
+      entries.push({ action: config.added, target: key, before: null, after: config.summary(afterMap[key]) });
+    } else if (!Object.prototype.hasOwnProperty.call(afterMap, key)) {
+      entries.push({ action: config.removed, target: key, before: config.summary(beforeMap[key]), after: null });
+    } else if (!equalStateValue(beforeMap[key], afterMap[key])) {
+      entries.push({
+        action: config.changed,
+        target: key,
+        before: config.summary(beforeMap[key]),
+        after: config.summary(afterMap[key])
+      });
+    }
+  });
+  return entries;
+}
+
+function buildStateAuditEntries(username, beforeState, afterState) {
+  const entries = [];
+  const addEntries = (category, items) => items.forEach(item => entries.push({
+    owner: username,
+    actor: username,
+    category,
+    ...item
+  }));
+
+  addEntries('menu', diffObjectRecords(
+    parsedStateValue(beforeState, 'kalori_haftalik_menuler', {}),
+    parsedStateValue(afterState, 'kalori_haftalik_menuler', {}),
+    {
+      added: 'Hafta oluşturuldu',
+      removed: 'Hafta silindi',
+      changed: 'Haftalık menü güncellendi',
+      summary: summarizeWeek
+    }
+  ));
+
+  const beforeFoods = parsedStateValue(beforeState, 'kalori_custom_foods', []);
+  const afterFoods = parsedStateValue(afterState, 'kalori_custom_foods', []);
+  const foodMap = foods => Object.fromEntries((Array.isArray(foods) ? foods : []).filter(food => food?.id).map(food => [food.id, food]));
+  addEntries('food', diffObjectRecords(foodMap(beforeFoods), foodMap(afterFoods), {
+    added: 'Özel yemek eklendi',
+    removed: 'Özel yemek silindi',
+    changed: 'Özel yemek güncellendi',
+    summary: food => ({ name: food?.name || '', calories: food?.calories ?? null, category: food?.category || '' })
+  }));
+
+  [
+    ['kalori_calorie_overrides', 'calorie', 'Kalori değeri eklendi', 'Kalori değeri sıfırlandı', 'Kalori değeri değiştirildi'],
+    ['kalori_allergen_overrides', 'allergen', 'Alerjen profili eklendi', 'Alerjen profili sıfırlandı', 'Alerjen profili değiştirildi']
+  ].forEach(([key, category, added, removed, changed]) => {
+    addEntries(category, diffObjectRecords(
+      parsedStateValue(beforeState, key, {}),
+      parsedStateValue(afterState, key, {}),
+      { added, removed, changed, summary: value => value }
+    ));
+  });
+
+  const beforeFavorites = parsedStateValue(beforeState, 'kalori_favorites', []);
+  const afterFavorites = parsedStateValue(afterState, 'kalori_favorites', []);
+  if (!equalStateValue(beforeFavorites, afterFavorites)) {
+    entries.push({
+      owner: username,
+      actor: username,
+      category: 'favorite',
+      action: 'Favoriler güncellendi',
+      target: 'Yemek favorileri',
+      before: { count: Array.isArray(beforeFavorites) ? beforeFavorites.length : 0 },
+      after: { count: Array.isArray(afterFavorites) ? afterFavorites.length : 0 }
+    });
+  }
+
+  const beforeSettings = parsedStateValue(beforeState, 'kalori_ayarlar', {});
+  const afterSettings = parsedStateValue(afterState, 'kalori_ayarlar', {});
+  const settingLabels = {
+    dailyCalorieGoal: 'Günlük kalori hedefi değiştirildi',
+    lastWeekId: 'Aktif hafta değiştirildi',
+    avoidedAllergens: 'Kaçınılan alerjenler değiştirildi',
+    possibleContainsUnsafe: 'Olası alerjen tercihi değiştirildi',
+    mayContainUnsafe: 'Çapraz temas tercihi değiştirildi',
+    excludeUnknownAllergens: 'Bilinmeyen alerjen tercihi değiştirildi'
+  };
+  new Set([...Object.keys(beforeSettings || {}), ...Object.keys(afterSettings || {})]).forEach(key => {
+    if (!equalStateValue(beforeSettings?.[key], afterSettings?.[key])) {
+      entries.push({
+        owner: username,
+        actor: username,
+        category: 'settings',
+        action: settingLabels[key] || 'Ayar değiştirildi',
+        target: key,
+        before: beforeSettings?.[key] ?? null,
+        after: afterSettings?.[key] ?? null
+      });
+    }
+  });
+  return entries;
 }
 
 function ensureDefaultUser() {
@@ -108,6 +340,14 @@ function sendPublicExcel(request, response, menu) {
     response.writeHead(304, headers);
     return response.end();
   }
+  appendAuditLog({
+    owner: PUBLIC_MENU_USERNAME,
+    actor: 'anonymous',
+    action: 'Herkese açık Excel indirildi',
+    category: 'export',
+    target: menu.weekId,
+    detail: filename
+  }, request);
   response.writeHead(200, headers);
   response.end(body);
 }
@@ -314,6 +554,7 @@ function getSessionUser(request) {
 }
 
 async function api(request, response, pathname) {
+  const query = Object.fromEntries(new URL(request.url, `http://${request.headers.host}`).searchParams);
   if (pathname.startsWith('/api/public/v1/')) {
     if (request.method === 'OPTIONS') {
       response.writeHead(204, {
@@ -384,6 +625,19 @@ async function api(request, response, pathname) {
     const credentials = passwordHash(password);
     database.users[username] = { ...credentials, state: {}, createdAt: new Date().toISOString() };
     writeDatabase(database);
+    try {
+      appendAuditLog({
+        owner: username,
+        actor: username,
+        action: 'Kullanıcı hesabı oluşturuldu',
+        category: 'auth',
+        target: username
+      }, request);
+    } catch (error) {
+      delete database.users[username];
+      writeDatabase(database);
+      throw error;
+    }
     return send(response, 201, { token: createSession(username), username });
   }
 
@@ -396,6 +650,13 @@ async function api(request, response, pathname) {
     if (!crypto.timingSafeEqual(Buffer.from(candidate, 'hex'), Buffer.from(user.hash, 'hex'))) {
       return send(response, 401, { error: 'Kullanıcı adı veya parola hatalı.' });
     }
+    appendAuditLog({
+      owner: username,
+      actor: username,
+      action: 'Oturum açıldı',
+      category: 'auth',
+      target: username
+    }, request);
     return send(response, 200, { token: createSession(username), username });
   }
 
@@ -404,8 +665,35 @@ async function api(request, response, pathname) {
 
   if (request.method === 'POST' && pathname === '/api/auth/logout') {
     const token = String(request.headers.authorization || '').replace(/^Bearer\s+/i, '');
+    appendAuditLog({
+      owner: username,
+      actor: username,
+      action: 'Oturum kapatıldı',
+      category: 'auth',
+      target: username
+    }, request);
     sessions.delete(token);
     return send(response, 200, { ok: true });
+  }
+
+  if (request.method === 'GET' && pathname === '/api/audit-logs') {
+    const logs = readAuditLogs(username, query);
+    return send(response, 200, { count: logs.length, logs });
+  }
+
+  if (request.method === 'POST' && pathname === '/api/audit-logs/event') {
+    const { type, target, detail } = await readJson(request);
+    const action = CLIENT_AUDIT_ACTIONS[type];
+    if (!action) return send(response, 400, { error: 'Geçersiz işlem türü.' });
+    const log = appendAuditLog({
+      owner: username,
+      actor: username,
+      action,
+      category: 'export',
+      target,
+      detail
+    }, request);
+    return send(response, 201, { ok: true, id: log.id });
   }
 
   if (pathname === '/api/state' && request.method === 'GET') {
@@ -420,9 +708,18 @@ async function api(request, response, pathname) {
     if (Buffer.byteLength(serialized) > MAX_STATE_BYTES) return send(response, 413, { error: 'Veri çok büyük.' });
     const database = readDatabase();
     if (!database.users[username]) return send(response, 401, { error: 'Kullanıcı bulunamadı.' });
+    const previousState = database.users[username].state || {};
+    const auditEntries = buildStateAuditEntries(username, previousState, state);
     database.users[username].state = state;
     database.users[username].updatedAt = new Date().toISOString();
     writeDatabase(database);
+    try {
+      if (auditEntries.length) appendAuditLogs(auditEntries, request);
+    } catch (error) {
+      database.users[username].state = previousState;
+      writeDatabase(database);
+      throw error;
+    }
     return send(response, 200, { ok: true });
   }
 

@@ -49,6 +49,12 @@ Giriş yapılmış uygulamada veri hem tarayıcıda hem de sunucudaki kullanıc�
 
 Tarayıcı verilerini temizlemek hesap verisini silmez. Yedek için yine düzenli **JSON dışa aktarma** önerilir.
 
+### İşlem geçmişi
+
+Üst menüdeki **İşlem Geçmişi** sekmesi hesapta yapılan veri değişikliklerini, oturum açma/kapatma olaylarını ve dışa aktarmaları en yeniden eskiye gösterir. Menü, yemek, kalori, alerjen, favori ve ayar değişiklikleri sunucuda eski ve yeni durum karşılaştırılarak kaydedilir. Kayıtlar kullanıcı, işlem, hedef, tarih-saat, önceki/yeni değer ve bağlantı bilgisi içerir; arayüzden değiştirilemez veya silinemez.
+
+Her kullanıcı yalnızca kendi hesabına ait kayıtları görür. Herkese açık Excel indirmeleri `kun` hesabının geçmişine anonim olay olarak eklenir ve IP adresinin son bölümü maskelenir. En fazla son 5.000 kayıt `data/audit-log.jsonl` dosyasında tutulur; daha eski kayıtlar otomatik budanır.
+
 ### Herkese açık menü API'si
 
 `kun` hesabına kaydedilen bütün haftalar ayrıca işlem veya API anahtarı gerektirmeden salt okunur JSON olarak sunulur. Yanıtlar özel yemekleri, geçerli kalori ve alerjen düzenlemelerini, porsiyon çarpanlarını, öğün toplamlarını ve gün toplamlarını içerir. Diğer kullanıcıların kayıtları ve hesap ayarları bu API'ye dahil edilmez.
@@ -87,9 +93,11 @@ kalorihesapla/
 │   └── xlsx-js-style.LICENSE.txt
 ├── tests/
 │   ├── allergens.test.html # Tarayıcıda çalışan alerjen regresyon testleri
-│   └── allergens.test.js
+│   ├── allergens.test.js
+│   └── public-api.test.js
+├── public-excel.js       # Herkese açık Excel çalışma kitabı üretimi
+├── server.js             # Uygulama, API ve işlem geçmişi sunucusu
 └── README.md
-├── server.js             # Uygulama ve API sunucusu
 ```
 
 ## Çalıştırma

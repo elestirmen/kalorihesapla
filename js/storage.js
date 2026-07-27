@@ -48,6 +48,22 @@ const Auth = (() => {
     applyState(state || {});
   }
 
+  async function getAuditLogs(filters = {}) {
+    const params = new URLSearchParams();
+    Object.entries(filters).forEach(([key, value]) => {
+      if (value !== undefined && value !== null && String(value).trim()) params.set(key, String(value).trim());
+    });
+    return request(`/api/audit-logs${params.toString() ? `?${params}` : ''}`);
+  }
+
+  function logEvent(type, target = '', detail = '') {
+    if (!isAuthenticated()) return;
+    request('/api/audit-logs/event', {
+      method: 'POST',
+      body: JSON.stringify({ type, target, detail })
+    }).catch(error => console.warn('İşlem geçmişi kaydedilemedi:', error.message));
+  }
+
   function scheduleSync() {
     if (!isAuthenticated() || applyingRemoteState) return;
     clearTimeout(syncTimer);
@@ -126,7 +142,7 @@ const Auth = (() => {
     location.reload();
   }
 
-  return { requireLogin, logout, username, scheduleSync };
+  return { requireLogin, logout, username, scheduleSync, getAuditLogs, logEvent };
 })();
 
 

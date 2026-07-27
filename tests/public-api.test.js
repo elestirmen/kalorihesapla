@@ -7,6 +7,7 @@ const vm = require('node:vm');
 
 const testDirectory = fs.mkdtempSync(path.join(os.tmpdir(), 'kalori-public-api-'));
 process.env.DATABASE_PATH = path.join(testDirectory, 'users.json');
+process.env.AUDIT_LOG_PATH = path.join(testDirectory, 'audit-log.jsonl');
 const { materializePublicFoods, materializePublicMenus } = require('../server');
 
 test('yemek kataloğu geçerli kalori ve alerjen değerlerini içerir', () => {
@@ -198,4 +199,67 @@ test('anonim GET uç noktası kun hesabının kaydını döndürür', async t =>
     headers: { 'If-None-Match': excelResponse.headers.get('etag') }
   });
   assert.equal(excelCachedResponse.status, 304);
+
+  const publicAuditRecords = fs.readFileSync(process.env.AUDIT_LOG_PATH, 'utf8')
+    .trim().split('\n').map(line => JSON.parse(line));
+  assert.equal(publicAuditRecords.filter(record => record.action === 'Herkese açık Excel indirildi').length, 1);
+  assert.equal(publicAuditRecords.find(record => record.action === 'Herkese açık Excel indirildi').actor, 'anonymous');
+  assert.equal(publicAuditRecords.find(record => record.action === 'Herkese açık Excel indirildi').ip, '127.0.0.0');
+
+  const unauthorizedAuditResponse = await fetch(`http://127.0.0.1:${address.port}/api/audit-logs`);
+  assert.equal(unauthorizedAuditResponse.status, 401);
+
+  const registerResponse = await fetch(`http://127.0.0.1:${address.port}/api/auth/register`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ username: 'logtest', password: 'test1234' })
+  });
+  const registerPayload = await registerResponse.json();
+  assert.equal(registerResponse.status, 201);
+  const authHeaders = {
+    Authorization: `Bearer ${registerPayload.token}`,
+    'Content-Type': 'application/json'
+  };
+  const loggedWeek = {
+    ...week,
+    label: 'Loglanan hafta',
+    days: [{ ...week.days[0], lunch: [] }]
+  };
+  const firstState = {
+    kalori_haftalik_menuler: JSON.stringify({ '2026-W30': loggedWeek })
+  };
+  const firstStateResponse = await fetch(`http://127.0.0.1:${address.port}/api/state`, {
+    method: 'PUT',
+    headers: authHeaders,
+    body: JSON.stringify({ state: firstState })
+  });
+  assert.equal(firstStateResponse.status, 200);
+
+  loggedWeek.days[0].lunch = ['mercimek_corbasi'];
+  const secondStateResponse = await fetch(`http://127.0.0.1:${address.port}/api/state`, {
+    method: 'PUT',
+    headers: authHeaders,
+    body: JSON.stringify({
+      state: { kalori_haftalik_menuler: JSON.stringify({ '2026-W30': loggedWeek }) }
+    })
+  });
+  assert.equal(secondStateResponse.status, 200);
+
+  const clientLogResponse = await fetch(`http://127.0.0.1:${address.port}/api/audit-logs/event`, {
+    method: 'POST',
+    headers: authHeaders,
+    body: JSON.stringify({ type: 'export_excel', target: '2026-W30', detail: 'menu.xlsx' })
+  });
+  assert.equal(clientLogResponse.status, 201);
+
+  const auditResponse = await fetch(`http://127.0.0.1:${address.port}/api/audit-logs?limit=50`, {
+    headers: authHeaders
+  });
+  const auditPayload = await auditResponse.json();
+  assert.equal(auditResponse.status, 200);
+  assert.equal(auditPayload.logs.some(record => record.action === 'Kullanıcı hesabı oluşturuldu'), true);
+  assert.equal(auditPayload.logs.some(record => record.action === 'Hafta oluşturuldu'), true);
+  assert.equal(auditPayload.logs.some(record => record.action === 'Haftalık menü güncellendi'), true);
+  assert.equal(auditPayload.logs.some(record => record.action === 'Excel dosyası indirildi'), true);
+  assert.equal(auditPayload.logs.every(record => record.owner === 'logtest'), true);
 });
