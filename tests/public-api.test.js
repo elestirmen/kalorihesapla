@@ -3,6 +3,7 @@ const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
 const test = require('node:test');
+const vm = require('node:vm');
 
 const testDirectory = fs.mkdtempSync(path.join(os.tmpdir(), 'kalori-public-api-'));
 process.env.DATABASE_PATH = path.join(testDirectory, 'users.json');
@@ -166,4 +167,35 @@ test('anonim GET uç noktası kun hesabının kaydını döndürür', async t =>
     headers: { 'If-None-Match': weekResponse.headers.get('etag') }
   });
   assert.equal(cachedResponse.status, 304);
+
+  const excelResponse = await fetch(`http://127.0.0.1:${address.port}/api/public/v1/menus/2026-W30.xlsx`);
+  const excelBuffer = Buffer.from(await excelResponse.arrayBuffer());
+  assert.equal(excelResponse.status, 200);
+  assert.equal(excelResponse.headers.get('access-control-allow-origin'), '*');
+  assert.equal(
+    excelResponse.headers.get('content-type'),
+    'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
+  );
+  assert.match(excelResponse.headers.get('content-disposition'), /menu_2026-07-20\.xlsx/);
+  assert.equal(excelBuffer.subarray(0, 2).toString(), 'PK');
+
+  const xlsxContext = {};
+  xlsxContext.window = xlsxContext;
+  vm.createContext(xlsxContext);
+  vm.runInContext(
+    fs.readFileSync(path.join(__dirname, '..', 'js', 'xlsx-js-style.min.js'), 'utf8'),
+    xlsxContext
+  );
+  const workbook = xlsxContext.XLSX.read(excelBuffer, { type: 'buffer' });
+  assert.deepEqual(Array.from(workbook.SheetNames), ['Mobil', 'Plan', 'Alerjenler', 'Detay']);
+  const mobileRows = xlsxContext.XLSX.utils.sheet_to_json(workbook.Sheets.Mobil, { header: 1 });
+  assert.deepEqual(
+    Array.from(mobileRows[0]),
+    ['TARİH', 'GÜN', 'ÖĞLE', 'kalori', 'alerjen', 'AKŞAM', 'kalori', 'alerjen']
+  );
+
+  const excelCachedResponse = await fetch(`http://127.0.0.1:${address.port}/api/public/v1/menus/2026-W30.xlsx`, {
+    headers: { 'If-None-Match': excelResponse.headers.get('etag') }
+  });
+  assert.equal(excelCachedResponse.status, 304);
 });

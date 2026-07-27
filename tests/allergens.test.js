@@ -237,7 +237,7 @@
         currentWeek = previousWeek;
       });
 
-      await test('XLSX Plan, Alerjenler ve Detay sayfalarında belirgin uyarılar bulunur', () => {
+      await test('XLSX Mobil, Plan, Alerjenler ve Detay sayfalarında belirgin uyarılar bulunur', () => {
         currentWeekId = '2026-W05';
         currentWeek = Storage.createEmptyWeek(new Date('2026-01-26T12:00:00'));
         Storage.removeAllergenOverride('mantu');
@@ -256,16 +256,22 @@
           writeFile: workbook => { captured.workbook = workbook; }
         };
         exportExcel();
+        const mobileRows = captured.sheets.Mobil?.rows || [];
         const planRows = captured.sheets.Plan?.rows || [];
         const allergenRows = captured.sheets.Alerjenler?.rows || [];
         const detailRows = captured.sheets.Detay?.rows || [];
+        assert(Object.keys(captured.sheets)[0] === 'Mobil');
+        assert(mobileRows[0]?.map(cell => cell?.v).join('|') === 'TARİH|GÜN|ÖĞLE|kalori|alerjen|AKŞAM|kalori|alerjen');
+        assert(captured.sheets.Mobil['!cols'].length === 8);
+        assert(captured.sheets.Mobil['!merges'].length > 0);
         assert(planRows.some(row => row.some(cell => cell?.v === 'Öğle Alerjen Uyarısı')));
         assert(planRows.every(row => row.length === 6));
         assert(captured.sheets.Plan['!cols'].length === 6);
         assert(planRows.some(row => row.some(cell => String(cell?.v || '').includes('[TERCİH ÇAKIŞMASI]'))));
         assert(planRows.some(row => row.some(cell => String(cell?.v || '').includes('[milk]'))));
         assert(!planRows.some(row => row.some(cell => cell?.v === 'Hedef %' || cell?.v === 'Durum')));
-        assert(captured.workbook?.Workbook?.Names?.some(name => name.Name === '_xlnm.Print_Area' && name.Ref.includes('$A$1:$F$')));
+        assert(captured.workbook?.Workbook?.Names?.some(name => name.Name === '_xlnm.Print_Area' && name.Sheet === 0 && name.Ref.includes(\"'Mobil'!$A$1:$H$\")));
+        assert(captured.workbook?.Workbook?.Names?.some(name => name.Name === '_xlnm.Print_Area' && name.Sheet === 1 && name.Ref.includes(\"'Plan'!$A$1:$F$\")));
         assert(allergenRows.some(row => row.some(cell => cell?.v === 'TERCİH UYARISI')));
         assert(allergenRows.some(row => row.some(cell => String(cell?.v || '').includes('ALERJEN BİLGİSİ DOĞRULANMAMIŞ'))));
         assert(detailRows.some(row => row.some(cell => cell?.v === 'ALERJEN UYARISI / BİLGİSİ')));

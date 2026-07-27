@@ -3,6 +3,7 @@ const fs = require('fs');
 const http = require('http');
 const path = require('path');
 const vm = require('vm');
+const { createPublicMenuWorkbook } = require('./public-excel');
 
 const PORT = Number(process.env.PORT) || 8080;
 const ROOT = __dirname;
@@ -11,6 +12,18 @@ const PUBLIC_MENU_USERNAME = 'kun';
 const sessions = new Map();
 const MAX_STATE_BYTES = 5 * 1024 * 1024;
 const PUBLIC_API_VERSION = '1';
+
+function loadXlsx() {
+  const context = {};
+  context.window = context;
+  vm.createContext(context);
+  vm.runInContext(
+    fs.readFileSync(path.join(ROOT, 'js', 'xlsx-js-style.min.js'), 'utf8'),
+    context,
+    { filename: 'xlsx-js-style.min.js' }
+  );
+  return context.XLSX;
+}
 
 function loadPublicCatalog() {
   const context = {};
@@ -25,6 +38,7 @@ function loadPublicCatalog() {
 }
 
 const PUBLIC_CATALOG = loadPublicCatalog();
+const XLSX = loadXlsx();
 
 function readDatabase() {
   try { return JSON.parse(fs.readFileSync(DATABASE_PATH, 'utf8')); }
@@ -73,6 +87,28 @@ function sendPublic(request, response, status, payload) {
     return response.end();
   }
   response.writeHead(status, headers);
+  response.end(body);
+}
+
+function sendPublicExcel(request, response, menu) {
+  const workbook = createPublicMenuWorkbook(XLSX, menu);
+  const body = XLSX.write(workbook, { bookType: 'xlsx', type: 'buffer', compression: true });
+  const etag = `"${crypto.createHash('sha256').update(body).digest('base64url')}"`;
+  const filename = `menu_${menu.startDate || menu.weekId}.xlsx`;
+  const headers = {
+    'Access-Control-Allow-Origin': '*',
+    'Access-Control-Expose-Headers': 'Content-Disposition, ETag',
+    'Cache-Control': 'public, max-age=0, must-revalidate',
+    'Content-Disposition': `attachment; filename="${filename}"`,
+    'Content-Length': body.length,
+    'Content-Type': 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+    ETag: etag
+  };
+  if (request.headers['if-none-match'] === etag) {
+    response.writeHead(304, headers);
+    return response.end();
+  }
+  response.writeHead(200, headers);
   response.end(body);
 }
 
@@ -302,12 +338,28 @@ async function api(request, response, pathname) {
       return sendPublic(request, response, 200, getPublicFoods());
     }
 
+    if (request.method === 'GET' && pathname === '/api/public/v1/menu/current.xlsx') {
+      const today = getIstanbulDate();
+      const menu = getPublicMenus().find(item => item.startDate <= today && item.endDate >= today);
+      return menu
+        ? sendPublicExcel(request, response, menu)
+        : sendPublic(request, response, 404, { error: 'Bu hafta için yayımlanmış menü bulunamadı.' });
+    }
+
     if (request.method === 'GET' && pathname === '/api/public/v1/menu/current') {
       const today = getIstanbulDate();
       const menu = getPublicMenus().find(item => item.startDate <= today && item.endDate >= today);
       return menu
         ? sendPublic(request, response, 200, menu)
         : sendPublic(request, response, 404, { error: 'Bu hafta için yayımlanmış menü bulunamadı.' });
+    }
+
+    const excelWeekMatch = pathname.match(/^\/api\/public\/v1\/menus\/(\d{4}-W\d{2})\.xlsx$/);
+    if (request.method === 'GET' && excelWeekMatch) {
+      const menu = getPublicMenus().find(item => item.weekId === excelWeekMatch[1]);
+      return menu
+        ? sendPublicExcel(request, response, menu)
+        : sendPublic(request, response, 404, { error: 'Menü bulunamadı.' });
     }
 
     const weekMatch = pathname.match(/^\/api\/public\/v1\/menus\/(\d{4}-W\d{2})$/);

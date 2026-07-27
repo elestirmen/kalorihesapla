@@ -28,7 +28,7 @@ Haftalık yemek menüsü planlama ve porsiyon bazlı kalori takibi yapan, taray�
 ### Dışa aktarma ve yedekleme
 
 - **JSON**: Seçili haftayı `menu_YYYY-MM-DD.json` formatında indirir; içe aktarma ile geri yüklenir. Sürüm 3 şeması, yalnızca kullanılan özel yemekleri, kalori override’larını ve yerleşik alerjen override’larını içerir. Eski sürüm 1/2 dosyaları da içe aktarılabilir.
-- **Excel**: Menü Planlama başlığındaki görünür **Excel'e Aktar** düğmesiyle indirilir. İlk **Plan** sayfası duvara asılabilecek altı sütunlu haftalık görünüm olarak düzenlenir; yemek kalorileri, öğün toplamları, günlük toplamlar ve kısa alerjen uyarıları aynı satırda okunur. Filtrelenebilir **Alerjenler** ve **Detay** sayfaları kapsamlı denetim bilgilerini korur. Kesin içerik, tarif değişkenliği, çapraz temas, bilinmeyen profil ve tercih çakışmaları metin ve ayrı uyarı renkleriyle gösterilir. Kütüphane yüklenemezse aynı sade görünümü koruyan HTML tabanlı **.xls** yedeği oluşturulur.
+- **Excel**: Menü Planlama başlığındaki görünür **Excel'e Aktar** düğmesiyle indirilir. İlk **Mobil** sayfası tarih, gün, öğle ve akşam yemeklerini kalori ve alerjen bilgileriyle kompakt bir düzende gösterir. **Plan** sayfası duvara asılabilecek altı sütunlu haftalık görünüm olarak düzenlenir; yemek kalorileri, öğün toplamları, günlük toplamlar ve kısa alerjen uyarıları aynı satırda okunur. Filtrelenebilir **Alerjenler** ve **Detay** sayfaları kapsamlı denetim bilgilerini korur. Kesin içerik, tarif değişkenliği, çapraz temas, bilinmeyen profil ve tercih çakışmaları metin ve ayrı uyarı renkleriyle gösterilir. Kütüphane yüklenemezse aynı sade görünümü koruyan HTML tabanlı **.xls** yedeği oluşturulur.
 - **Teknik alerjen kodları**: Arayüz ve Excel çıktılarında Türkçe alerjen adlarının yanında `milk`, `egg`, `gluten_cereals` gibi kararlı uygulama kodları gösterilir. Bu anahtarlar uygulama içi veri kodlarıdır; resmî AB sınıflandırmasının yerine geçmez.
 - **Yardım menüsü**: Üst başlıktaki **Yardım** düğmesi; yemek ve kalori yönetimi, haftalık menü hazırlama, alerjen girişi, Excel/yazdırma ve JSON yedekleme adımlarını uygulama içinde açıklar.
 - **Tam veri yedeği**: Üst başlıktaki **Yedek** menüsü bütün haftaları, özel yemekleri, kalori ve alerjen düzenlemelerini, favorileri ve cihaz ayarlarını tek bir JSON dosyasında dışa aktarır. Dosya başka bir bilgisayarda aynı menüden geri yüklenebilir; içe aktarma mevcut kayıtlarla birleşir ve aynı kimlikteki haftalarda yedek sürümü kullanılır.
@@ -59,8 +59,10 @@ Tarayıcı verilerini temizlemek hesap verisini silmez. Yedek için yine düzenl
 | `GET /api/public/v1/menus` | Kayıtlı bütün haftaların menüleri |
 | `GET /api/public/v1/menus/YYYY-Www` | Belirtilen ISO haftasının menüsü |
 | `GET /api/public/v1/foods` | Geçerli kalori ve alerjen bilgileriyle bütün yemek kataloğu |
+| `GET /api/public/v1/menu/current.xlsx` | İçinde bulunulan haftanın salt okunur Excel dosyası |
+| `GET /api/public/v1/menus/YYYY-Www.xlsx` | Belirtilen ISO haftasının salt okunur Excel dosyası |
 
-Yemek kataloğu yanıtında kategori ve alerjen sözlükleriyle birlikte her yemeğin kimliği, adı, kategorisi, porsiyon açıklaması, geçerli porsiyon kalorisi, kaynak kalorisi, özel/yerleşik durumu ve ayrıntılı alerjen profili bulunur. Uç noktalar web ve mobil istemciler için `Access-Control-Allow-Origin: *` başlığı döndürür. Menü veya yemek verilerindeki her değişiklik sunucuya eşitlendikten sonra API yanıtına otomatik yansır.
+Yemek kataloğu yanıtında kategori ve alerjen sözlükleriyle birlikte her yemeğin kimliği, adı, kategorisi, porsiyon açıklaması, geçerli porsiyon kalorisi, kaynak kalorisi, özel/yerleşik durumu ve ayrıntılı alerjen profili bulunur. Uç noktalar web ve mobil istemciler için `Access-Control-Allow-Origin: *` başlığı döndürür. `.xlsx` adresleri giriş gerektirmeden yalnızca dosya indirmeye izin verir; veri düzenleme yetkisi sağlamaz. Menü veya yemek verilerindeki her değişiklik sunucuya eşitlendikten sonra API ve Excel yanıtlarına otomatik yansır.
 
 ## Teknolojiler
 
@@ -103,7 +105,7 @@ node server.js
 
 Tarayıcıda `http://localhost:8080` adresine gidin.
 
-İlk açılış hesabı `kun` / `kun2026`'dır. Giriş ekranından başka kullanıcılar da oluşturulabilir. Kullanıcı kayıtları çalışma anında `data/users.json` dosyasına yazılır ve Git'e eklenmez. Üretimde `yemeklistesi-web` adlı Node container'ı Nginx Proxy Manager'ın `npm-net` ağına bağlıdır; proxy host bu container'ın 80 portuna yönlenir.
+Giriş bilgileri sistem yöneticisi tarafından sağlanır. Giriş ekranından başka kullanıcılar da oluşturulabilir. Kullanıcı kayıtları çalışma anında `data/users.json` dosyasına yazılır ve Git'e eklenmez. Üretimde `yemeklistesi-web` adlı Node container'ı Nginx Proxy Manager'ın `npm-net` ağına bağlıdır; proxy host bu container'ın 80 portuna yönlenir.
 
 ## Kullanım özeti
 

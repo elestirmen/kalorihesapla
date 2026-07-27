@@ -1542,6 +1542,100 @@ function exportExcel() {
     ]);
     const unknownAllergenCount = allergenEntries.filter(entry => entry.allergenInfo.status === ALLERGEN_INFO_STATUS.unknown).length;
 
+    const mobileBorder = {
+      top: { style: 'thin', color: { rgb: '000000' } },
+      bottom: { style: 'thin', color: { rgb: '000000' } },
+      left: { style: 'thin', color: { rgb: '000000' } },
+      right: { style: 'thin', color: { rgb: '000000' } }
+    };
+    const mobileBaseStyle = {
+      font: { name: 'Calibri', sz: 11, color: { rgb: '000000' } },
+      fill: { patternType: 'solid', fgColor: { rgb: 'FFFFFF' } },
+      alignment: { vertical: 'center' },
+      border: mobileBorder
+    };
+    const mobileStyles = {
+      header: {
+        ...mobileBaseStyle,
+        font: { ...mobileBaseStyle.font, sz: 12, bold: true },
+        alignment: { horizontal: 'center', vertical: 'center' }
+      },
+      date: {
+        ...mobileBaseStyle,
+        alignment: { horizontal: 'center', vertical: 'center' }
+      },
+      day: {
+        ...mobileBaseStyle,
+        font: { ...mobileBaseStyle.font, bold: true },
+        alignment: { horizontal: 'center', vertical: 'center' }
+      },
+      food: {
+        ...mobileBaseStyle,
+        alignment: { horizontal: 'left', vertical: 'center', wrapText: true }
+      },
+      kcal: {
+        ...mobileBaseStyle,
+        alignment: { horizontal: 'center', vertical: 'center' },
+        numFmt: '0'
+      },
+      allergen: {
+        ...mobileBaseStyle,
+        alignment: { horizontal: 'left', vertical: 'center', wrapText: true }
+      },
+      total: {
+        ...mobileBaseStyle,
+        font: { ...mobileBaseStyle.font, bold: true },
+        alignment: { horizontal: 'left', vertical: 'center' }
+      }
+    };
+    const mobileRows = [[
+      cell('TARİH', mobileStyles.header),
+      cell('GÜN', mobileStyles.header),
+      cell('ÖĞLE', mobileStyles.header),
+      cell('kalori', mobileStyles.header),
+      cell('alerjen', mobileStyles.header),
+      cell('AKŞAM', mobileStyles.header),
+      cell('kalori', mobileStyles.header),
+      cell('alerjen', mobileStyles.header)
+    ]];
+    const mobileMerges = [];
+
+    dayExports.forEach(entry => {
+      const itemRowCount = Math.max(entry.lunchItems.length, entry.dinnerItems.length, 1);
+      const firstRow = mobileRows.length;
+
+      for (let index = 0; index < itemRowCount; index += 1) {
+        const lunchItem = entry.lunchItems[index];
+        const dinnerItem = entry.dinnerItems[index];
+        mobileRows.push([
+          cell(index === 0 ? formatDate(entry.day.date) : '', mobileStyles.date),
+          cell(index === 0 ? sanitizeExcelText(entry.day.dayName).toLocaleUpperCase('tr-TR') : '', mobileStyles.day),
+          cell(lunchItem ? `${lunchItem.name}${lunchItem.portion !== 1 ? ` (${formatPortion(lunchItem.portion)}x)` : ''}` : '', mobileStyles.food),
+          cell(lunchItem?.calories || 0, mobileStyles.kcal),
+          cell(lunchItem ? formatCompactFoodAllergenWarning(lunchItem.food) : '', mobileStyles.allergen),
+          cell(dinnerItem ? `${dinnerItem.name}${dinnerItem.portion !== 1 ? ` (${formatPortion(dinnerItem.portion)}x)` : ''}` : '', mobileStyles.food),
+          cell(dinnerItem?.calories || 0, mobileStyles.kcal),
+          cell(dinnerItem ? formatCompactFoodAllergenWarning(dinnerItem.food) : '', mobileStyles.allergen)
+        ]);
+      }
+
+      mobileRows.push([
+        blank(mobileStyles.date),
+        blank(mobileStyles.day),
+        cell(`TOPLAM: ${entry.lunchCal} kcal`, mobileStyles.total),
+        cell(entry.lunchCal, mobileStyles.kcal),
+        blank(mobileStyles.allergen),
+        cell(`TOPLAM: ${entry.dinnerCal} kcal`, mobileStyles.total),
+        cell(entry.dinnerCal, mobileStyles.kcal),
+        blank(mobileStyles.allergen)
+      ]);
+      const lastRow = mobileRows.length - 1;
+      mobileMerges.push(
+        { s: { r: firstRow, c: 0 }, e: { r: lastRow, c: 0 } },
+        { s: { r: firstRow, c: 1 }, e: { r: lastRow, c: 1 } }
+      );
+    });
+
     const planRows = [
       [
         cell('HAFTALIK MENÜ', styles.title),
@@ -1736,6 +1830,28 @@ function exportExcel() {
       ]);
     });
 
+    const mobileSheet = xlsx.utils.aoa_to_sheet(mobileRows);
+    mobileSheet['!cols'] = [
+      { wch: 14 },
+      { wch: 16 },
+      { wch: 32 },
+      { wch: 11 },
+      { wch: 32 },
+      { wch: 32 },
+      { wch: 11 },
+      { wch: 32 }
+    ];
+    mobileSheet['!rows'] = mobileRows.map((row, index) => ({ hpt: index === 0 ? 28 : 23 }));
+    mobileSheet['!merges'] = mobileMerges;
+    mobileSheet['!margins'] = {
+      left: 0.2,
+      right: 0.2,
+      top: 0.2,
+      bottom: 0.2,
+      header: 0.1,
+      footer: 0.1
+    };
+
     const planSheet = xlsx.utils.aoa_to_sheet(planRows);
     planSheet['!cols'] = [
       { wch: 16 },
@@ -1829,13 +1945,15 @@ function exportExcel() {
       ref: xlsx.utils.encode_range({ s: { r: allergenHeaderRowIndex, c: 0 }, e: { r: allergenRows.length - 1, c: 9 } })
     };
 
+    xlsx.utils.book_append_sheet(workbook, mobileSheet, 'Mobil');
     xlsx.utils.book_append_sheet(workbook, planSheet, 'Plan');
     xlsx.utils.book_append_sheet(workbook, allergenSheet, 'Alerjenler');
     xlsx.utils.book_append_sheet(workbook, detailSheet, 'Detay');
     workbook.Workbook = workbook.Workbook || {};
     workbook.Workbook.Names = [
-      ...(workbook.Workbook.Names || []).filter(name => name.Name !== '_xlnm.Print_Area' || name.Sheet !== 0),
-      { Name: '_xlnm.Print_Area', Sheet: 0, Ref: `'Plan'!$A$1:$F$${planRows.length}` }
+      ...(workbook.Workbook.Names || []).filter(name => name.Name !== '_xlnm.Print_Area' || ![0, 1].includes(name.Sheet)),
+      { Name: '_xlnm.Print_Area', Sheet: 0, Ref: `'Mobil'!$A$1:$H$${mobileRows.length}` },
+      { Name: '_xlnm.Print_Area', Sheet: 1, Ref: `'Plan'!$A$1:$F$${planRows.length}` }
     ];
     xlsx.writeFile(workbook, `menu_${currentWeek.startDate}.xlsx`, { bookType: 'xlsx', compression: true });
     showToast('Excel olarak indirildi', 'success');
