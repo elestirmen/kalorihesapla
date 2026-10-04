@@ -1,3 +1,5 @@
+<p align="center"><img src="assets/icon.png" alt="kalorihesapla simgesi" width="120"></p>
+
 # Kalori Hesapla
 
 Haftalık yemek menüsü planlama ve porsiyon bazlı kalori takibi yapan, tarayıcıda çalışan tek sayfalık bir uygulamadır. Türk mutfağına yönelik geniş bir yemek listesi ve günlük kalori hedefiyle öğün öğün takip sunar; veriler sunucuya gönderilmez, cihazınızda saklanır.
